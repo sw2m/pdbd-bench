@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from harness.build import Build
+
 defaults = ["pppd.pppd", "linkup.linkup", "linkup.pppd"]
 
 
@@ -23,16 +25,16 @@ class Params:
     def load(cls) -> Params:
         inputs = Path(os.environ["BENCHER_IN"])
         raw = json.loads((inputs / "params.json").read_text())
-        pppd = Path("/opt/pppd")
+        build = Build()
         return cls(
             pairings=list(raw.get("pairings", defaults)),
             repeat=int(raw.get("repeat", 3)),
             duration=int(raw.get("duration", 10)),
             baud=int(raw.get("baud", 115200)),
             linkup=inputs / "artifacts" / "linkup",
-            pppd=pppd / "sbin" / "pppd",
-            version=(pppd / "VERSION").read_text().strip(),
-            mode=(pppd / "MODE").read_text().strip(),
+            pppd=build.binary,
+            version=(build.prefix / "VERSION").read_text().strip(),
+            mode=(build.prefix / "MODE").read_text().strip(),
         )
 
     def runnable(self) -> list[str]:

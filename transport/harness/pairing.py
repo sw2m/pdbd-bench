@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -25,19 +26,24 @@ class Pairing:
         results = self.work / "results.json"
         child = os.fork()
         if child == 0:
-            Path(os.environ["BENCHER_REPORTERS"], f"{self.name}.pid").write_text(f"{os.getpid()}\n")
-            found = []
-            for i in range(self.params.repeat):
-                found.append(Attempt(self.params, self.cpus, self.kinds, self.work / str(i)).run())
-                time.sleep(1)
-            results.write_text(json.dumps(found))
-            os._exit(0)
-        os.waitpid(child, 0)
-        return (
-            [r for r in json.loads(results.read_text()) if r is not None]
-            if results.exists()
-            else []
-        )
+            status = 0
+            try:
+                pid = Path(os.environ["BENCHER_REPORTERS"], f"{self.name}.pid")
+                pid.write_text(f"{os.getpid()}\n")
+                found = []
+                for i in range(self.params.repeat):
+                    attempt = Attempt(self.params, self.cpus, self.kinds, self.work / str(i))
+                    found.append(attempt.run())
+                    time.sleep(1)
+                results.write_text(json.dumps(found))
+            except BaseException:
+                traceback.print_exc()
+                status = 1
+            os._exit(status)
+        _, status = os.waitpid(child, 0)
+        if os.waitstatus_to_exitcode(status) != 0:
+            raise RuntimeError(f"{self.name}: the harness failed; see its traceback above")
+        return [r for r in json.loads(results.read_text()) if r is not None]
 
     def tags(self) -> dict[str, str]:
         tags = {"pairing": self.name}

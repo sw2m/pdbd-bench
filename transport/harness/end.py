@@ -53,9 +53,21 @@ class End:
 
     def start(self, params: Params) -> None:
         env = {**os.environ, "PDBD_BAUD": str(params.baud)}
-        stderr = self.log.open("ab") if self.kind == "linkup" else subprocess.DEVNULL
-        self.process = subprocess.Popen(
-            self.command(params), env=env, stdout=subprocess.DEVNULL, stderr=stderr
+        with self.log.open("ab") as log:
+            self.process = subprocess.Popen(
+                self.command(params), env=env, stdout=subprocess.DEVNULL, stderr=log
+            )
+
+    def check(self) -> None:
+        if self.process is None or self.process.poll() is None:
+            return
+        try:
+            tail = " | ".join(self.log.read_text(errors="replace").strip().splitlines()[-3:])
+        except FileNotFoundError:
+            tail = "no log"
+        side = "near" if self.near else "far"
+        raise RuntimeError(
+            f"{self.kind} ({side}) exited {self.process.returncode} before the link opened: {tail}"
         )
 
     def opened(self) -> bool:

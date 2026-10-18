@@ -52,14 +52,20 @@ class Attempt:
                 f"PTY,link={self.far.tty},raw,echo=0",
             ]
         )
-        self.wait(lambda: self.near.tty.exists() and self.far.tty.exists(), 100, 0.05)
+        if not self.wait(lambda: self.near.tty.exists() and self.far.tty.exists(), 100, 0.05):
+            raise RuntimeError(f"socat never made the L1 ptys (exit {self.bridge.poll()})")
         self.far.start(self.params)
         # see sw2m/pdbd#24
-        self.wait(lambda: self.quiet("ip", "link", "show", self.far.device), 200, 0.05)
+        if not self.wait(
+            lambda: self.alive() and self.quiet("ip", "link", "show", self.far.device), 200, 0.05
+        ):
+            self.far.check()
+            raise RuntimeError(f"{self.far.kind} (far) is running but never made {self.far.device}")
         start = time.monotonic()
         self.near.start(self.params)
         opened: dict[str, float] = {}
         for _ in range(3000):
+            self.alive()
             for side, end in (("near", self.near), ("far", self.far)):
                 if side not in opened and end.opened():
                     opened[side] = time.monotonic()
@@ -75,6 +81,13 @@ class Attempt:
             self.say("L3 never answered after L2 opened")
             return None
         return (max(opened.values()) - start) * 1000
+
+    def alive(self) -> bool:
+        for end in (self.near, self.far):
+            end.check()
+        if self.bridge is not None and self.bridge.poll() is not None:
+            raise RuntimeError(f"the socat L1 bridge exited {self.bridge.returncode}")
+        return True
 
     def ping(self, count: int, wait: int) -> list[float]:
         done = subprocess.run(
@@ -172,8 +185,5 @@ class Attempt:
         try:
             bringup = self.up()
             return None if bringup is None else self.measure(bringup)
-        except (subprocess.CalledProcessError, KeyError, ValueError) as error:
-            self.say(f"failed: {error}")
-            return None
         finally:
             self.down()
