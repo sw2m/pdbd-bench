@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  pull_request:
+    # No `opened`: a non-draft open would race draft-guard and fire CI once before
+    # it re-drafts. CI runs when a draft is marked ready (ready_for_review) or on a
+    # push (synchronize). Drafts are skipped below regardless.
+    types:
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event.pull_request.draft || false }}
+  cancel-in-progress: true
+
+jobs:
+  # The one status to mark required; checks join it through `needs` as they land
+  mergeable:
+    runs-on: ubuntu-latest
+    steps:
+      - run: '[ "${{ github.event_name }}" = workflow_dispatch ] || [ "${{ github.event.pull_request.draft }}" = false ]'
