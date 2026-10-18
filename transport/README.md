@@ -12,12 +12,12 @@ ConfReq sent before the far tty opens is lost and never resent (pdbd#24). Each p
 
 | Row | Tags | Samples |
 | --- | --- | --- |
-| `pppd` | `version`, `mode` (`floating` or `pinned`), `toolchain` (the compiler that built it) | verdict `ok`: the comparator that was raced, built and verified; present whenever a pairing uses pppd |
+| `pppd` | `version`, `mode` (`floating` or `pinned`), `toolchain` (the compiler that built it), `sha256` (of the tarball it was built from) | verdict `ok`: the comparator that was raced, built and verified; present whenever a pairing uses pppd |
 | `link` | `pairing` | verdict: `ok` when every repetition came up; `err` otherwise, and the pairing's other rows are from the repetitions that did |
-| `bring-up` | `pairing` | ms from near start until both ends report IPCP Open (`local  IP address` from pppd, `phase: Open` from linkup), polled every 10 ms |
+| `bring-up` | `pairing` | ms from near start until both ends report IPCP Open (`local  IP address` from pppd; `phase: Open` from linkup, which ppproto enters only once IPv4CP is Opened), polled every 10 ms. Far is already running and its interface exists when the clock starts (pdbd#24), so this is the near end bringing the link up. pppd ↔ pppd reads about 3 s: far pppd's first ConfReq is lost to the PTY flush, so it waits out pppd's restart timer |
 | `throughput` | `pairing`, `direction`: `forward`, `reverse`, `parallel` | iperf3 Mbit/s near → far, far → near (`-R`), and near → far over 4 connections (`-P 4`), `duration` s each |
 | `rtt` | `pairing`, `load`: `idle`, `loaded` | every ping reply's ms: 20 idle, then during the forward run |
-| `cpu` | `pairing` | ms of busy time on the run's own CPUs (bencher fences the benchmark onto them, so this includes kernel PPP and softirq work) per MB received over the three iperf3 runs |
+| `cpu` | `pairing` | ms of busy time on the run's own CPUs per MB received over the three iperf3 runs. bencher fences the benchmark's processes onto those CPUs, so this includes the kernel PPP and softirq work done there; kernel work the guest schedules onto the telemetry CPU escapes it, the same way for every pairing |
 
 Rows with pppd in their pairing carry its version as a `pppd` tag. `cpu` carries the pairing's
 telemetry: each pairing is a reporter (`pppd.pppd`, `linkup.linkup`, `linkup.pppd`) covering its
@@ -44,7 +44,9 @@ the current one. `transport/pppd` (`harness.Build`) resolves the latest `ppp-pro
 release, or `params.pins.pppd` when the consumer pins one, downloads ppp's own release tarball
 (download.samba.org, which carries a built `configure` for every version), and builds it into
 `/opt/pppd`. The runner's Salt state calls it during provisioning, so every run spends about a
-minute building it.
+minute building it. The tarball comes over TLS and its signature isn't checked; its sha256 is
+recorded on the `pppd` row, so the bits that were raced are identifiable and a change in them
+is visible.
 
 Every failure on that path fails the run, so an upstream change to how ppp is released or
 installed surfaces as a red bench instead of a quietly skipped comparator:
@@ -57,15 +59,21 @@ installed surfaces as a red bench instead of a quietly skipped comparator:
   about where pppd is.
 
 In the measurement itself only one thing is an outcome rather than a failure: both ends running
-but the link never coming up becomes the pairing's `link` verdict `err`, since that's what a
-linkup regression (such as pdbd#24) looks like. Everything else exits the runner non-zero, and
-bencher fails the run at `execute`:
+but the link not working. L2 never opening, or L2 opening while L3 never answers a ping, becomes
+the pairing's `link` verdict `err`, since that's what a linkup regression (such as pdbd#24) looks
+like. Everything else exits the runner non-zero, and bencher fails the run at `execute`:
+
+- a `linkup` artifact that is declared but isn't an executable file (a consumer that declares
+  none just skips the linkup pairings);
+- `duration` under 4 s, which leaves the loaded pings no time;
 
 - an end (pppd or linkup) or the socat bridge exiting before the link opens, with the end's exit
   status and the tail of its log, so a pppd that installed but won't start is a red bench, not
   a quiet `err`;
 - the far end running but never creating its interface;
-- iperf3 or ping failing, or output that doesn't parse.
+- the iperf3 server never listening, with its own output;
+- iperf3 failing, a ping getting no reply at all (partial loss is data, total loss is a failure),
+  or output that doesn't parse.
 
 `ci/bench/` is this repo's own consumer of `transport`: `pppd.pppd` only (no `linkup` artifact),
 short runs, and expectations that the link comes up and carries traffic. CI runs it through the

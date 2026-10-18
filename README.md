@@ -33,6 +33,7 @@ Each runner is one directory, laid out by bencher's runner contract
   salt/runner.sls  what the runner needs installed, from bencher's pillar
   run              the entrypoint: reads $BENCHER_IN, prints the result JSON
   harness/         the entrypoint's Python package
+  <other scripts>  helpers its Salt state calls (transport/pppd builds its comparator)
 ```
 
 Runners here are written in Python 3 against the standard library only. bencher guarantees

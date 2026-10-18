@@ -16,7 +16,12 @@ print(
     f"iperf3 {params.duration}s per run, CPUs {' '.join(map(str, cpus.ids))}",
     file=sys.stderr,
 )
-pppd = {"version": params.version, "mode": params.mode, "toolchain": params.toolchain}
+pppd = {
+    "version": params.version,
+    "mode": params.mode,
+    "toolchain": params.toolchain,
+    "sha256": params.sha256,
+}
 rows = (
     [{"name": "pppd", "tags": pppd, "verdict": "ok"}] if any("pppd" in p for p in pairings) else []
 )

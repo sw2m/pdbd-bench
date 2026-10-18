@@ -2,6 +2,7 @@
 transport:
   pkg.installed:
     - pkgs:
+      - python3
       - socat
       - iperf3
       - iproute2

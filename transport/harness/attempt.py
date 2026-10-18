@@ -108,6 +108,10 @@ class Attempt:
             capture_output=True,
             text=True,
         )
+        if done.returncode != 0:
+            raise RuntimeError(
+                f"ping exited {done.returncode}: {done.stderr.strip() or done.stdout[-200:]}"
+            )
         return [float(t[5:]) for t in done.stdout.split() if t.startswith("time=")]
 
     def iperf(self, *flags: str) -> dict[str, Any]:
@@ -133,10 +137,12 @@ class Attempt:
         return received
 
     def measure(self, bringup: float) -> dict[str, Any]:
-        self.server = subprocess.Popen(
-            ["iperf3", "-s", "-B", far], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        self.wait(
+        log = self.out / "server.log"
+        with log.open("ab") as stderr:
+            self.server = subprocess.Popen(
+                ["iperf3", "-s", "-B", far], stdout=subprocess.DEVNULL, stderr=stderr
+            )
+        listening = self.wait(
             lambda: bool(
                 subprocess.run(
                     ["ss", "-Hltn", f"src {far}:5201"], capture_output=True, text=True
@@ -145,6 +151,9 @@ class Attempt:
             50,
             0.1,
         )
+        if not listening:
+            said = log.read_text(errors="replace").strip()
+            raise RuntimeError(f"iperf3 -s never listened on {far}:5201: {said or 'no output'}")
         idle = self.ping(20, 5)
         before = self.cpus.busy()
         pinger = subprocess.Popen(
@@ -157,8 +166,15 @@ class Attempt:
             stdout=subprocess.PIPE,
             text=True,
         )
-        forward = self.iperf()
-        output, _ = pinger.communicate()
+        try:
+            forward = self.iperf()
+            output, _ = pinger.communicate()
+        finally:
+            if pinger.poll() is None:
+                pinger.kill()
+                pinger.wait()
+        if pinger.returncode != 0:
+            raise RuntimeError(f"the loaded ping exited {pinger.returncode}")
         loaded = [float(t[5:]) for t in output.split() if t.startswith("time=")]
         reverse = self.iperf("-R")
         parallel = self.iperf("-P", "4")
@@ -178,8 +194,14 @@ class Attempt:
         for process in (self.server, self.bridge):
             if process is not None and process.poll() is None:
                 process.terminate()
-                process.wait()
-        subprocess.run(["ip", "netns", "del", "near"], capture_output=True)
+                try:
+                    process.wait(10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+        gone = subprocess.run(["ip", "netns", "del", "near"], capture_output=True, text=True)
+        if gone.returncode != 0 and self.out.exists():
+            self.say(f"ip netns del near exited {gone.returncode}: {gone.stderr.strip()}")
 
     def run(self) -> dict[str, Any] | None:
         try:

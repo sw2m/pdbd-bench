@@ -7,6 +7,7 @@ from pathlib import Path
 
 from harness.params import Params
 
+# see https://github.com/sw2m/ppproto/blob/2a60894/src/ppp/mod.rs#L145-L148
 markers = {"pppd": "local  IP address", "linkup": "phase: Open"}
 
 
