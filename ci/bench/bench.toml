@@ -1,0 +1,14 @@
+[fixture]
+path = "../.."
+runner = "transport"
+
+[limits]
+cpu = 4
+memory = "2GiB"
+provision = "PT30M"
+run = 900
+
+[params]
+pairings = ["pppd.pppd"]
+duration = 4
+repeat = 2

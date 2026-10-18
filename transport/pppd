@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+version=${1:-}
+if [ -z "$version" ]; then
+  version=$(curl -fsSL https://api.github.com/repos/ppp-project/ppp/releases/latest | jq -r .tag_name)
+  version=${version#ppp-}
+  version=${version#v}
+  mode=floating
+else
+  mode=pinned
+fi
+if [ "$(cat /opt/pppd/VERSION 2>/dev/null)" = "$version" ]; then
+  exit 0
+fi
+build=$(mktemp -d)
+trap 'rm -rf "$build"' EXIT
+# see https://download.samba.org/pub/ppp/ (ppp's own release tarballs, with configure, for every version)
+curl -fsSL "https://download.samba.org/pub/ppp/ppp-$version.tar.gz" | tar -xz -C "$build"
+cd "$build/ppp-$version"
+./configure --prefix=/opt/pppd --sysconfdir=/etc >/dev/null
+make -j "$(nproc)" >/dev/null
+make install >/dev/null
+printf '%s\n' "$version" > /opt/pppd/VERSION
+printf '%s\n' "$mode" > /opt/pppd/MODE
+echo "pppd $version ($mode) built into /opt/pppd"

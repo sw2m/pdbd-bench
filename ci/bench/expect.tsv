@@ -1,0 +1,4 @@
+# name	tags	quantity	op	bound
+link	{}	verdict	==	"ok"
+throughput	{"pairing": "pppd.pppd"}	samples.Mbit/s.median	>	1
+bring-up	{"pairing": "pppd.pppd"}	samples.ms.median	<	10000
