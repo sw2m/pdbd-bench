@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 
 releases = "https://api.github.com/repos/ppp-project/ppp/releases/latest"
-# ppp's own release tarballs, which carry a built configure for every version
+# see https://download.samba.org/pub/ppp/
 tarballs = "https://download.samba.org/pub/ppp/ppp-{version}.tar.gz"
 
 
