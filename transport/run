@@ -16,6 +16,10 @@ print(
     f"iperf3 {params.duration}s per run, CPUs {' '.join(map(str, cpus.ids))}",
     file=sys.stderr,
 )
+pppd = {"version": params.version, "mode": params.mode, "toolchain": params.toolchain}
+rows = (
+    [{"name": "pppd", "tags": pppd, "verdict": "ok"}] if any("pppd" in p for p in pairings) else []
+)
 with tempfile.TemporaryDirectory() as work:
-    rows = [row for name in pairings for row in Pairing(name, params, cpus, Path(work)).rows()]
+    rows += [row for name in pairings for row in Pairing(name, params, cpus, Path(work)).rows()]
 print(json.dumps({"rows": rows}))

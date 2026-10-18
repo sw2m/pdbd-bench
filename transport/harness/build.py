@@ -64,6 +64,8 @@ class Build:
             ):
                 subprocess.run(step, cwd=source, check=True, stdout=subprocess.DEVNULL)
         self.verify(version)
+        cc = subprocess.run(["cc", "--version"], capture_output=True, text=True, check=True)
+        (self.prefix / "TOOLCHAIN").write_text(cc.stdout.splitlines()[0] + "\n")
         marker.write_text(f"{version}\n")
         (self.prefix / "MODE").write_text(f"{mode}\n")
         print(f"pppd {version} ({mode}) built into {self.prefix}")

@@ -12,6 +12,7 @@ ConfReq sent before the far tty opens is lost and never resent (pdbd#24). Each p
 
 | Row | Tags | Samples |
 | --- | --- | --- |
+| `pppd` | `version`, `mode` (`floating` or `pinned`), `toolchain` (the compiler that built it) | verdict `ok`: the comparator that was raced, built and verified; present whenever a pairing uses pppd |
 | `link` | `pairing` | verdict: `ok` when every repetition came up; `err` otherwise, and the pairing's other rows are from the repetitions that did |
 | `bring-up` | `pairing` | ms from near start until both ends report IPCP Open (`local  IP address` from pppd, `phase: Open` from linkup), polled every 10 ms |
 | `throughput` | `pairing`, `direction`: `forward`, `reverse`, `parallel` | iperf3 Mbit/s near → far, far → near (`-R`), and near → far over 4 connections (`-P 4`), `duration` s each |

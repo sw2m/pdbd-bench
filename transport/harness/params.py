@@ -20,6 +20,7 @@ class Params:
     pppd: Path
     version: str
     mode: str
+    toolchain: str
 
     @classmethod
     def load(cls) -> Params:
@@ -35,6 +36,7 @@ class Params:
             pppd=build.binary,
             version=(build.prefix / "VERSION").read_text().strip(),
             mode=(build.prefix / "MODE").read_text().strip(),
+            toolchain=(build.prefix / "TOOLCHAIN").read_text().strip(),
         )
 
     def runnable(self) -> list[str]:
