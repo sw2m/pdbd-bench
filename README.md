@@ -25,7 +25,12 @@ Each runner is one directory, laid out by bencher's runner contract
   runner.toml      image, container or vm, declared reporters
   salt/runner.sls  what the runner needs installed, from bencher's pillar
   run              the entrypoint: reads $BENCHER_IN, prints the result JSON
+  harness/         the entrypoint's Python package
 ```
+
+Runners here are written in Python 3 against the standard library only. bencher guarantees
+`python3` in every guest (sw2m/bencher#17), so a runner written this way moves to another OS
+family without a rewrite. Anything else a runner needs, its Salt state installs.
 
 ### `transport`
 
@@ -63,8 +68,8 @@ socat, both L2 ends and both iperf3 ends.
 | --- | --- |
 | `linkup` | pdbd's `linkup` example, built static (`x86_64-unknown-linux-musl`): the guest is not the build host |
 
-pppd is built from ppp's own release tarball by the runner's Salt state, so every run spends
-about a minute building it.
+pppd is built from ppp's own release tarball (`transport/pppd`, `harness.Build`) by the
+runner's Salt state, so every run spends about a minute building it.
 
 `ci/bench/` is this repo's own consumer of `transport`: `pppd.pppd` only (no `linkup` artifact),
 short runs, and expectations that the link comes up and carries traffic. CI runs it through the

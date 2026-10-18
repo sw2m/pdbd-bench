@@ -6,8 +6,6 @@ transport:
       - iperf3
       - iproute2
       - iputils-ping
-      - jq
-      - curl
       - ca-certificates
       - build-essential
       - pkg-config
