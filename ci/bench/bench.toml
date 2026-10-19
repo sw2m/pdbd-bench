@@ -1,0 +1,14 @@
+[fixture]
+path = "../.."
+runner = "transport"
+
+[limits]
+cpu = 2 # a 4-vCPU GitHub runner: one for telemetry, one for the benchmark, two left to the host and QEMU
+memory = "2GiB"
+provision = "PT30M"
+run = 900
+
+[params]
+pairings = ["pppd.pppd"]
+duration = 4
+repeat = 2
