@@ -33,7 +33,7 @@ Each runner is one directory, laid out by bencher's runner contract
   salt/runner.sls  what the runner needs installed, from bencher's pillar
   run              the entrypoint: reads $BENCHER_IN, prints the result JSON
   harness/         the entrypoint's Python package
-  <other scripts>  helpers its Salt state calls (transport/pppd builds its comparator)
+  <other scripts>  helpers its Salt state calls (transport/pppd builds its comparator; socat/oracles installs its oracles)
 ```
 
 Runners here are written in Python 3 against the standard library only. bencher guarantees
@@ -45,6 +45,7 @@ family without a rewrite. Anything else a runner needs, its Salt state installs.
 | Runner | Measures |
 | --- | --- |
 | [`transport`](transport/README.md) | pdbd's userspace PPP (`linkup`) against kernel PPP (`pppd`) over one L1 |
+| [`socat`](socat/README.md) | pdbd's socat-style address dialect against the prior-art parsers (socat, websocat, oittaa/socat, tocat), as per-input verdicts |
 
 Each runner documents its own rows, params and artifacts beside its code.
 

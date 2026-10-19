@@ -74,6 +74,6 @@ like. Everything else exits the runner non-zero, and bencher fails the run at `e
 - iperf3 failing, a ping getting no reply at all (partial loss is data, total loss is a failure),
   or output that doesn't parse.
 
-`ci/bench/` is this repo's own consumer of `transport`: `pppd.pppd` only (no `linkup` artifact),
+`ci/transport/` is this repo's own consumer of `transport`: `pppd.pppd` only (no `linkup` artifact),
 short runs, and expectations that the link comes up and carries traffic. CI runs it through the
 bencher action.

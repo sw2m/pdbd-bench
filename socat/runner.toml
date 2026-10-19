@@ -1,0 +1,2 @@
+image = "images:debian/12/cloud"
+type = "container" # parsing needs no kernel of its own; the entrypoint makes its own empty network namespace

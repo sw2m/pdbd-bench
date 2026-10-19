@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+from harness import Params, install
+from harness.corpus import Corpus, source
+from harness.oracle import Batch, Cli, Dump
+
+if os.environ.get("SOCAT_ISOLATED") != "1":
+    os.execvpe("unshare", ["unshare", "--net", sys.executable, *sys.argv], {**os.environ, "SOCAT_ISOLATED": "1"})
+links = sorted(line.split(":")[0].strip() for line in Path("/proc/self/net/dev").read_text().splitlines()[2:])
+if links != ["lo"]:
+    raise RuntimeError(f"not an empty network namespace: {links}")
+
+params = Params.load()
+socat, websocat, oittaa, tocat = install.Socat(), install.Websocat(), install.Oittaa(), install.Tocat()
+for oracle in (socat, websocat, oittaa, tocat):
+    oracle.verify(oracle.provenance()["version"])
+
+bare = {"PATH": "/nonexistent"}
+corpus = Corpus()
+corpus.add(source.Help(install.Oracle.said([str(socat.binary), "-hhh"], env=bare)).entries("socat"))
+corpus.add(source.Listing(install.Oracle.said([str(oittaa.binary), "-hhh"], env=bare)).entries())
+corpus.add(
+    source.Websocat(install.Oracle.said([str(websocat.binary), "--help=full"], env=bare), websocat.doc.read_text()).entries()
+)
+walked = subprocess.run(
+    [str(oittaa.walker), oittaa.provenance()["source"]], capture_output=True, text=True, check=True
+)
+corpus.add(source.Lines("# test\n" + walked.stdout, "oittaa").entries())
+corpus.add(source.Schemes(tocat.schemes.read_text()).entries())
+if params.hand:
+    corpus.add(source.Lines(params.hand.read_text(), "hand").entries())
+texts = [e.text for e in corpus.entries]
+print(f"socat: {len(texts)} corpus entries", file=sys.stderr)
+
+rows: list[dict[str, object]] = []
+for entry in corpus.entries:
+    rows.append({"name": "corpus", "tags": {"input": entry.text, "family": entry.family}, "verdict": "ok"})
+with tempfile.TemporaryDirectory() as sandbox:
+    verdicts = {
+        "socat": Cli(socat.binary, Path(sandbox)).judge(texts),
+        "websocat": Dump(websocat.binary, Path(sandbox)).judge(texts),
+        "oittaa": Cli(oittaa.binary, Path(sandbox)).judge(texts),
+        "tocat": Batch(tocat.binary).judge(texts),
+    }
+for name, oracle in (("socat", socat), ("websocat", websocat), ("oittaa", oittaa), ("tocat", tocat)):
+    facts = oracle.provenance()
+    rows.append({"name": "oracle", "tags": {"impl": name, **facts}, "verdict": "ok"})
+    print(f"socat: {name} {facts['version']} ({facts['mode']})", file=sys.stderr)
+    for text, verdict in zip(texts, verdicts[name], strict=True):
+        rows.append({"name": "parse", "tags": {"impl": name, "input": text}, "verdict": verdict})
+
+if params.verdict is None:
+    print("socat: no verdict artifact, so only the oracles are raced", file=sys.stderr)
+else:
+    ours = Batch(params.verdict)
+    for text, answer in zip(texts, ours.answers(texts), strict=True):
+        rows.append({"name": "parse", "tags": {"impl": "ours", "input": text}, "verdict": "ok" if answer["ok"] else "err"})
+        if answer["ok"] and not isinstance(answer.get("canonical"), str):
+            raise RuntimeError(f"ours accepted {text!r} without a canonical print")
+        if answer["ok"]:
+            rows.append({"name": "print", "tags": {"input": text, "canonical": answer["canonical"]}, "verdict": "ok"})
+    if params.alternatives:
+        pairs = [json.loads(line) for line in params.alternatives.read_text().splitlines() if line]
+        if not all(isinstance(p, list) and len(p) == 2 and all(isinstance(s, str) for s in p) for p in pairs):
+            raise ValueError("alternatives: each line is a JSON [input, form] pair of strings")
+        if len({pair[0] for pair in pairs}) != len(pairs):
+            raise ValueError("alternatives: an input has more than one alternative")
+        answers = ours.answers([pair[1] for pair in pairs])
+        for (text, form), answer in zip(pairs, answers, strict=True):
+            rows.append({"name": "alternative", "tags": {"input": text, "form": form}, "verdict": "ok" if answer["ok"] else "err"})
+print(json.dumps({"rows": rows}, ensure_ascii=False))

@@ -1,0 +1,10 @@
+# name	tags	quantity	op	bound
+parse	{"impl": "socat", "input": "tcp:127.0.0.1:1"}	verdict	==	"ok"
+parse	{"impl": "websocat", "input": "tcp:127.0.0.1:1"}	verdict	==	"ok"
+parse	{"impl": "oittaa", "input": "tcp:127.0.0.1:1"}	verdict	==	"ok"
+parse	{"impl": "tocat", "input": "tcp:127.0.0.1:1"}	verdict	==	"ok"
+parse	{"impl": "socat", "input": "NOSUCHTYPE:x"}	verdict	==	"err"
+parse	{"impl": "websocat", "input": "NOSUCHTYPE:x"}	verdict	==	"err"
+parse	{"impl": "oittaa", "input": "NOSUCHTYPE:x"}	verdict	==	"err"
+parse	{"impl": "tocat", "input": "NOSUCHTYPE:x"}	verdict	==	"err"
+oracle	{}	verdict	==	"ok"
