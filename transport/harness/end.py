@@ -84,3 +84,4 @@ class End:
                 self.process.wait(10)
             except subprocess.TimeoutExpired:
                 self.process.kill()
+                self.process.wait()

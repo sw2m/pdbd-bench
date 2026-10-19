@@ -45,7 +45,7 @@ class Params:
         )
 
     def runnable(self) -> list[str]:
-        if not self.linkup.exists():
+        if not (self.linkup.exists() or self.linkup.is_symlink()):
             return [p for p in self.pairings if "linkup" not in p.split(".")]
         if not self.linkup.is_file() or not os.access(self.linkup, os.X_OK):
             raise RuntimeError(f"the linkup artifact {self.linkup} is not an executable file")

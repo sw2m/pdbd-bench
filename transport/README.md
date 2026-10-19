@@ -66,7 +66,6 @@ like. Everything else exits the runner non-zero, and bencher fails the run at `e
 - a `linkup` artifact that is declared but isn't an executable file (a consumer that declares
   none just skips the linkup pairings);
 - `duration` under 4 s, which leaves the loaded pings no time;
-
 - an end (pppd or linkup) or the socat bridge exiting before the link opens, with the end's exit
   status and the tail of its log, so a pppd that installed but won't start is a red bench, not
   a quiet `err`;

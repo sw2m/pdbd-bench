@@ -200,7 +200,7 @@ class Attempt:
                     process.kill()
                     process.wait()
         gone = subprocess.run(["ip", "netns", "del", "near"], capture_output=True, text=True)
-        if gone.returncode != 0 and self.out.exists():
+        if gone.returncode != 0:
             self.say(f"ip netns del near exited {gone.returncode}: {gone.stderr.strip()}")
 
     def run(self) -> dict[str, Any] | None:
