@@ -27,7 +27,7 @@ jobs:
       - id: bench
         uses: sw2m/bencher@4957a77d6fe3ef2704ad0935425fcc64a3e764ab # v0.1.0
         with:
-          bench: ci/bench
+          bench: ci/transport
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -35,13 +35,31 @@ jobs:
           path: ${{ steps.bench.outputs.report }}
           if-no-files-found: warn
 
+  socat:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: bench
+        uses: sw2m/bencher@4957a77d6fe3ef2704ad0935425fcc64a3e764ab # v0.1.0
+        with:
+          bench: ci/socat
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: socat
+          path: ${{ steps.bench.outputs.report }}
+          if-no-files-found: warn
+
   # The one status to mark required; checks join it through `needs` as they land
   mergeable:
     needs:
       - transport
+      - socat
     if: always()
     runs-on: ubuntu-latest
     steps:
       - run: |
-          echo "transport=${{ needs.transport.result }}"
+          echo "transport=${{ needs.transport.result }} socat=${{ needs.socat.result }}"
           [ "${{ needs.transport.result }}" = success ]
+          [ "${{ needs.socat.result }}" = success ]

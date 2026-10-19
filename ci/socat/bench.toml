@@ -1,0 +1,12 @@
+[fixture]
+path = "../.."
+runner = "socat"
+
+[limits]
+cpu = 2 # a 4-vCPU GitHub runner: one for telemetry, one for the oracles, two left to the host
+memory = "4GiB" # cargo builds tocat while provisioning
+provision = "PT45M" # socat, Go, Rust and tocat build from source while provisioning
+run = 900
+
+[artifacts]
+hand = "hand.jsonl"

@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+import json
+import sys
+
+from harness.install import Oittaa, Socat, Tocat, Websocat
+
+pins = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+for oracle in (Socat, Websocat, Oittaa, Tocat):
+    oracle(pins.get(oracle.name, "")).run()
