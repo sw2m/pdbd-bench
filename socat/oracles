@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 import json
 import sys
+from pathlib import Path
 
 from harness.install import Oittaa, Socat, Tocat, Websocat
 
-pins = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+pins = json.loads(Path(sys.argv[1]).read_text()) if len(sys.argv) > 1 else {}
 for oracle in (Socat, Websocat, Oittaa, Tocat):
-    oracle(pins.get(oracle.name, "")).run()
+    oracle(str(pins.get(oracle.name, ""))).run()

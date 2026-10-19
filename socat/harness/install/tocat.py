@@ -58,7 +58,11 @@ class Tocat(Oracle):
         shutil.rmtree(work, ignore_errors=True)
         shutil.copytree(Path(__file__).resolve().parents[2] / "tocat", work)
         manifest = work / "Cargo.toml"
-        manifest.write_text(manifest.read_text().replace('tocat-core = "*"', f'tocat-core = "={version}"'))
+        floating = manifest.read_text()
+        pinned = floating.replace('tocat-core = "*"', f'tocat-core = "={version}"')
+        if pinned == floating:
+            raise RuntimeError(f"{manifest} has no tocat-core = \"*\" line to pin to {version}")
+        manifest.write_text(pinned)
         subprocess.run(["cargo", "build", "-q", "--release"], cwd=work, env=self.env(), check=True)
         self.binary.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(work / "target" / "release" / "tocat", self.binary)
@@ -74,7 +78,10 @@ class Tocat(Oracle):
 
     def verify(self, version: str) -> None:
         said = self.said([str(self.binary)], stdin='"tcp:127.0.0.1:1"\n')
-        if said not in ('{"ok":true}', '{"ok":false}'):
-            raise RuntimeError(f"{self.binary} answered {said!r} to one input")
+        if said != '{"ok":true}':
+            raise RuntimeError(f"{self.binary} answered {said!r} to tcp:127.0.0.1:1, which tocat parses")
+        built = (self.prefix / "src" / "Cargo.toml").read_text()
+        if f'tocat-core = "={version}"' not in built:
+            raise RuntimeError(f"{self.binary} wasn't built against tocat-core {version}")
         if "match normalize(scheme)" not in self.schemes.read_text():
             raise RuntimeError(f"{self.schemes} has no scheme table: tocat's parser layout changed")

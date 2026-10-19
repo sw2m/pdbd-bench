@@ -21,16 +21,13 @@ socat, websocat, oittaa, tocat = install.Socat(), install.Websocat(), install.Oi
 for oracle in (socat, websocat, oittaa, tocat):
     oracle.verify(oracle.provenance()["version"])
 
-
-def said(command: list[str]) -> str:
-    done = subprocess.run(command, capture_output=True, text=True, errors="replace", env={"PATH": "/nonexistent"})
-    return done.stdout + done.stderr
-
-
+bare = {"PATH": "/nonexistent"}
 corpus = Corpus()
-corpus.add(source.Help(said([str(socat.binary), "-hhh"])).entries("socat"))
-corpus.add(source.Listing(said([str(oittaa.binary), "-hhh"])).entries())
-corpus.add(source.Websocat(said([str(websocat.binary), "--help=full"]), websocat.doc.read_text()).entries())
+corpus.add(source.Help(install.Oracle.said([str(socat.binary), "-hhh"], env=bare)).entries("socat"))
+corpus.add(source.Listing(install.Oracle.said([str(oittaa.binary), "-hhh"], env=bare)).entries())
+corpus.add(
+    source.Websocat(install.Oracle.said([str(websocat.binary), "--help=full"], env=bare), websocat.doc.read_text()).entries()
+)
 walked = subprocess.run(
     [str(oittaa.walker), oittaa.provenance()["source"]], capture_output=True, text=True, check=True
 )
@@ -47,9 +44,9 @@ for entry in corpus.entries:
 with tempfile.TemporaryDirectory() as sandbox:
     verdicts = {
         "socat": Cli(socat.binary, Path(sandbox)).judge(texts),
-        "websocat": Dump(websocat.binary).judge(texts),
+        "websocat": Dump(websocat.binary, Path(sandbox)).judge(texts),
         "oittaa": Cli(oittaa.binary, Path(sandbox)).judge(texts),
-        "tocat": ["ok" if a["ok"] else "err" for a in Batch(tocat.binary).answers(texts)],
+        "tocat": Batch(tocat.binary).judge(texts),
     }
 for name, oracle in (("socat", socat), ("websocat", websocat), ("oittaa", oittaa), ("tocat", tocat)):
     facts = oracle.provenance()

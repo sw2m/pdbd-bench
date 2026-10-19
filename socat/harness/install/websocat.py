@@ -43,5 +43,7 @@ class Websocat(Oracle):
         said = self.said([str(self.binary), "--version"])
         if version.removeprefix("v") not in said.split():
             raise RuntimeError(f"{self.binary} --version says {said!r}, not {version}")
+        if "Full list of address types" not in self.said([str(self.binary), "--help=full"]):
+            raise RuntimeError(f"{self.binary} --help=full lists no address types: its help layout changed")
         if "Aliases:" not in self.doc.read_text(errors="replace"):
             raise RuntimeError(f"{self.doc} has no Aliases: entries: websocat's doc.md layout changed")

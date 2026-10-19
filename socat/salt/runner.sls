@@ -10,8 +10,15 @@ socat:
       - libreadline-dev
       - libwrap0-dev
 
+pins:
+  file.serialize:
+    - name: /var/lib/bencher/pins.json
+    - dataset: {{ pins | json }}
+    - serializer: json
+
 oracles:
   cmd.run:
-    - name: /var/lib/bencher/runner/oracles '{{ pins | json }}'
+    - name: /var/lib/bencher/runner/oracles /var/lib/bencher/pins.json
     - require:
       - pkg: socat
+      - file: pins

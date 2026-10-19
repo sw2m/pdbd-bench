@@ -36,7 +36,7 @@ once, under the first source that produced it.
 
 ## Oracles
 
-None opens anything real: they run in the empty namespace, and socat and oittaa with
+None opens anything real: they run in the empty namespace, and socat, oittaa and websocat with
 `PATH=/nonexistent` in a scratch directory.
 
 - **socat** (built from upstream's latest release) and **oittaa/socat** (its CLI, `go install`ed
@@ -57,13 +57,22 @@ socat's acceptances of malformed input are artefacts of that.
 
 | Param | Default | |
 | --- | --- | --- |
-| `pins.socat`, `pins.websocat`, `pins.oittaa`, `pins.tocat` | latest | a version for that oracle; unset, the latest release is raced |
+| `pins.socat` | latest | a release as upstream's tarballs name it: `1.8.1.3` |
+| `pins.websocat` | latest | a release tag: `v1.14.1` |
+| `pins.oittaa` | latest | a Go module version: `v1.0.3` |
+| `pins.tocat` | latest | a `tocat-core` crate version: `0.3.0` |
+
+Unset, an oracle's latest release is raced. The Salt state writes the pins to a file that
+`oracles` reads, so no pin reaches a shell command line.
 
 | Artifact | |
 | --- | --- |
 | `ours` | an executable for the guest that reads one JSON string per line on stdin and answers each with one JSON line: `{"ok": true, "canonical": "<print>"}` or `{"ok": false, ...}` (pdbd's `examples/verdict.rs`, built static) |
 | `hand` | extra corpus entries (above) |
 | `alternatives` | one JSON `[input, form]` pair per line: an input ours rejects and the form it accepts instead |
+
+What this runner leaves to its consumer: which inputs have an alternative (the `alternatives`
+artifact, decided by hand) and any coverage summary, which the consumer renders from the rows.
 
 ## Oracles track upstream
 
@@ -73,8 +82,13 @@ Rust (rustup, stable) and then `tocat/`. Every step verifies what it installed, 
 fails provisioning, and with it the bench: if an upstream changes how it ships, the run goes red
 rather than racing something else. socat's downloads are plain http with no signature (its https
 certificate is self-signed), so the tarball's sha256 is recorded on its `oracle` row; Go's and
-rustup's archives are checked against the sha256 their upstreams publish.
+rustup's archives are checked against the sha256 their upstreams publish. Every tarball is
+extracted only after checking that no member or link lands outside its directory (Debian 12's
+Python predates `tarfile`'s extraction filters). An installed oracle is verified against the
+version it was asked for: socat's and websocat's own `--version`, oittaa's module version in
+its Go build info, and the `tocat-core` version its harness was built against.
 
 `ci/socat/` is this repo's own consumer of `socat`: no `ours` artifact, two hand entries, and
-rules that each oracle accepts a plain TCP address and rejects an unknown type, so a broken
-install or classifier fails CI here before it reaches pdbd.
+rules that all four oracles accept `tcp:127.0.0.1:1` and reject an unknown type, so an oracle that
+rejects everything, or accepts everything, fails CI here before it reaches pdbd. Each corpus
+source raises when it parses nothing from its upstream, so a layout change fails the run too.

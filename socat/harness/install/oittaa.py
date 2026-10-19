@@ -90,3 +90,6 @@ class Oittaa(Oracle):
             raise RuntimeError(f"{self.binary} -hhh lists no address types: oittaa's help layout changed")
         if not os.access(self.walker, os.X_OK):
             raise RuntimeError(f"{self.walker} is not executable")
+        built = self.said([str(self.go), "version", "-m", str(self.binary)], env=self.env())
+        if f"\tmod\t{module}\t{version}\t" not in built:
+            raise RuntimeError(f"{self.binary} wasn't built from {module} {version}: {built[:300]!r}")

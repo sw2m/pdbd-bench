@@ -9,12 +9,15 @@ workers = 16 # one oracle process per input
 
 
 class Dump:
-    def __init__(self, binary: Path) -> None:
+    def __init__(self, binary: Path, sandbox: Path) -> None:
         self.binary = binary
+        self.sandbox = sandbox
 
     def ask(self, text: str) -> str:
         child = subprocess.Popen(
             [str(self.binary), "-t", "-E", "--dump-spec", text, "-"],
+            env={"PATH": "/nonexistent"},
+            cwd=self.sandbox,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

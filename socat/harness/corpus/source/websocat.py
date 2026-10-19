@@ -78,6 +78,7 @@ class Websocat:
         known = [n for n in names if n] + [a for pair in aliases for a in pair[1]]
         examples = [e for e in self.examples() if e == "-" or any(n != "-" and e.startswith(n) for n in known)]
         section = ""
+        found = 0
         for line in self.help.splitlines():
             if line.startswith("Full list of address types"):
                 section = "type"
@@ -95,8 +96,11 @@ class Websocat:
                 (e for e in examples if e.startswith(name) and len(e) > len(name)),
                 self.guess(name, desc.lower(), section),
             )
+            found += 1
             yield Entry(form, f"websocat:{section}")
             for alias in (a for n, more in aliases if n == name for a in more):
                 yield Entry(f"{alias}{form[len(name):]}", f"websocat:{section}")
+        if not found:
+            raise RuntimeError("websocat --help=full: no address types or overlays parsed")
         for example in examples:
             yield Entry(example, "websocat:example")

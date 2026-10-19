@@ -31,6 +31,7 @@ class Oracle:
         marker = self.prefix / "VERSION"
         if marker.exists() and marker.read_text().strip() == version:
             self.verify(version)
+            (self.prefix / "MODE").write_text(f"{mode}\n")
             return
         self.prefix.mkdir(parents=True, exist_ok=True)
         facts = self.build(version)
@@ -74,11 +75,17 @@ class Oracle:
 
     @staticmethod
     def unpack(tarball: Path, into: Path) -> None:
+        root = into.resolve()
         with tarfile.open(tarball) as archive:
-            if hasattr(tarfile, "data_filter"):
-                archive.extractall(into, filter="data")
-            else:
-                archive.extractall(into)
+            for member in archive.getmembers():
+                target = (root / member.name).resolve()
+                if not target.is_relative_to(root) or member.isdev():
+                    raise RuntimeError(f"{tarball}: member {member.name!r} would land outside {root}")
+                if member.issym() or member.islnk():
+                    link = (target.parent / member.linkname).resolve() if member.issym() else (root / member.linkname).resolve()
+                    if not link.is_relative_to(root):
+                        raise RuntimeError(f"{tarball}: link {member.name!r} points outside {root}")
+            archive.extractall(into)
 
     @staticmethod
     def said(
