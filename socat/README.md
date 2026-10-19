@@ -17,7 +17,7 @@ anything parses, so no oracle can reach a network, and fails if the namespace ha
 | `alternative` | `input`, `form` | whether ours accepts `form`, the consumer's stand-in for an input it rejects |
 | `oracle` | `impl`, `version`, `mode` (`floating` or `pinned`), and what identifies the build: `sha256` (socat's tarball, websocat's binary), `toolchain`, `source` (oittaa's module) | `ok`: the oracle that was raced |
 
-`ours`, `print` and `alternative` rows need the `ours` artifact; without it only the oracles are
+`ours`, `print` and `alternative` rows need the `verdict` artifact; without it only the oracles are
 raced.
 
 ## Corpus
@@ -49,7 +49,7 @@ None opens anything real: they run in the empty namespace, and socat, oittaa and
   running after 3 s has parsed it.
 - **tocat**: `tocat/`, a tiny program over `tocat-core`'s latest release, asked
   `EndpointSpec::from_str` per input; a panic is `err`.
-- **ours**: the `ours` artifact, asked the same way (below).
+- **ours**: the consumer's own parser, the `verdict` artifact, asked the same way (below).
 
 An oracle's verdict means it accepted the syntax, inferred from its errors; it never proves the
 string would work. socat's lexer runs an unterminated quote into its next argument, so some of
@@ -67,7 +67,7 @@ Unset, an oracle's latest release is raced. The Salt state writes the pins to a 
 
 | Artifact | |
 | --- | --- |
-| `ours` | an executable for the guest that reads one JSON string per line on stdin and answers each with one JSON line: `{"ok": true, "canonical": "<print>"}` or `{"ok": false, ...}` (pdbd's `examples/verdict.rs`, built static) |
+| `verdict` | ours: an executable for the guest that reads one JSON string per line on stdin and answers each with one JSON line: `{"ok": true, "canonical": "<print>"}` or `{"ok": false, ...}` (pdbd's `examples/verdict.rs`, built static) |
 | `hand` | extra corpus entries (above) |
 | `alternatives` | one JSON `[input, form]` pair per line: an input ours rejects and the form it accepts instead |
 
@@ -88,7 +88,7 @@ Python predates `tarfile`'s extraction filters). An installed oracle is verified
 version it was asked for: socat's and websocat's own `--version`, oittaa's module version in
 its Go build info, and the `tocat-core` version its harness was built against.
 
-`ci/socat/` is this repo's own consumer of `socat`: no `ours` artifact, two hand entries, and
+`ci/socat/` is this repo's own consumer of `socat`: no `verdict` artifact, two hand entries, and
 rules that all four oracles accept `tcp:127.0.0.1:1` and reject an unknown type, so an oracle that
 rejects everything, or accepts everything, fails CI here before it reaches pdbd. Each corpus
 source raises when it parses nothing from its upstream, so a layout change fails the run too.

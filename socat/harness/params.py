@@ -8,7 +8,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class Params:
-    ours: Path | None
+    verdict: Path | None
     hand: Path | None
     alternatives: Path | None
 
@@ -22,9 +22,9 @@ class Params:
             path = artifacts / name
             return path if path.exists() or path.is_symlink() else None
 
-        ours = artifact("ours")
-        if ours is not None and (not ours.is_file() or not os.access(ours, os.X_OK)):
-            raise RuntimeError(f"the ours artifact {ours} is not an executable file")
+        verdict = artifact("verdict")
+        if verdict is not None and (not verdict.is_file() or not os.access(verdict, os.X_OK)):
+            raise RuntimeError(f"the verdict artifact {verdict} is not an executable file")
         for name in ("hand", "alternatives"):
             path = artifact(name)
             if path is not None and not path.is_file():
@@ -35,4 +35,4 @@ class Params:
         oracles = {"socat", "websocat", "oittaa", "tocat"}
         if set(raw.get("pins", {})) - oracles:
             raise ValueError(f"pins name an unknown oracle: {sorted(set(raw['pins']) - oracles)}")
-        return cls(ours=ours, hand=artifact("hand"), alternatives=artifact("alternatives"))
+        return cls(verdict=verdict, hand=artifact("hand"), alternatives=artifact("alternatives"))

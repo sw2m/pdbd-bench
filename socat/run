@@ -55,10 +55,10 @@ for name, oracle in (("socat", socat), ("websocat", websocat), ("oittaa", oittaa
     for text, verdict in zip(texts, verdicts[name], strict=True):
         rows.append({"name": "parse", "tags": {"impl": name, "input": text}, "verdict": verdict})
 
-if params.ours is None:
-    print("socat: no ours artifact, so only the oracles are raced", file=sys.stderr)
+if params.verdict is None:
+    print("socat: no verdict artifact, so only the oracles are raced", file=sys.stderr)
 else:
-    ours = Batch(params.ours)
+    ours = Batch(params.verdict)
     for text, answer in zip(texts, ours.answers(texts), strict=True):
         rows.append({"name": "parse", "tags": {"impl": "ours", "input": text}, "verdict": "ok" if answer["ok"] else "err"})
         if answer["ok"] and not isinstance(answer.get("canonical"), str):
