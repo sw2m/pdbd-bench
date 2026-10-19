@@ -9,6 +9,7 @@ from pathlib import Path
 
 listen = 0.4 # s: past socat's parse, an open that blocks (a LISTEN in accept) has accepted the syntax
 stuck = 5.0 # s: a stderr drain that outlasts the kill is a hung oracle
+late = 5.0 # s: the second window for an oracle killed before it said anything, which is starvation, not a verdict
 workers = 16 # one oracle process per input, each in its own network namespace so concurrent LISTENs never share a port
 syntax = [
     "unknown device/address",
@@ -36,6 +37,15 @@ class Cli:
         self.unshare = found
 
     def ask(self, text: str) -> str:
+        stderr, killed = self.run(text, listen)
+        if killed and not stderr.strip():
+            stderr, killed = self.run(text, late)
+        lines = stderr.splitlines()
+        if any(line.startswith("unshare:") for line in lines):
+            raise RuntimeError(f"unshare failed for {text!r}: {stderr.strip()[:200]}")
+        return "err" if any(p in line for line in lines for p in syntax) else "ok"
+
+    def run(self, text: str, window: float) -> tuple[str, bool]:
         child = subprocess.Popen(
             [self.unshare, "--net", str(self.binary), "-d", "-d", text, "/dev/null"],
             env={"PATH": "/nonexistent"},
@@ -48,7 +58,7 @@ class Cli:
             start_new_session=True,
         )
         try:
-            stderr = child.communicate(timeout=listen)[1]
+            return child.communicate(timeout=window)[1], False
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(child.pid, signal.SIGKILL)
@@ -58,8 +68,7 @@ class Cli:
                 stderr = child.communicate(timeout=stuck)[1]
             except subprocess.TimeoutExpired:
                 raise RuntimeError(f"{self.binary} on {text!r}: stderr still open {stuck} s after the kill") from None
-        lines = stderr.splitlines()
-        return "err" if any(p in line for line in lines for p in syntax) else "ok"
+        return stderr, True
 
     def judge(self, texts: list[str]) -> list[str]:
         with ThreadPoolExecutor(workers) as pool:
