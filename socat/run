@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,12 @@ from pathlib import Path
 from harness import Params, install
 from harness.corpus import Corpus, source
 from harness.oracle import Batch, Cli, Dump
+
+
+def shaped(pair: object) -> bool:
+    if not isinstance(pair, list) or len(pair) not in (2, 3) or not all(isinstance(s, str) for s in pair):
+        return False
+    return len(pair) == 2 or pair[2] in ("full", "partial")
 
 if os.environ.get("SOCAT_ISOLATED") != "1":
     os.execvpe("unshare", ["unshare", "--net", sys.executable, *sys.argv], {**os.environ, "SOCAT_ISOLATED": "1"})
@@ -63,17 +70,17 @@ else:
         rows.append({"name": "parse", "tags": {"impl": "ours", "input": text}, "verdict": "ok" if answer["ok"] else "err"})
         if answer["ok"] and not isinstance(answer.get("canonical"), str):
             raise RuntimeError(f"ours accepted {text!r} without a canonical print")
+        if answer["ok"] and "class" in answer:
+            raise RuntimeError(f"ours accepted {text!r} but gave it a rejection class")
         if answer["ok"]:
             rows.append({"name": "print", "tags": {"input": text, "canonical": answer["canonical"]}, "verdict": "ok"})
         elif "class" in answer:
-            if not isinstance(answer["class"], str) or not answer["class"]:
+            if not isinstance(answer["class"], str) or not re.fullmatch(r"[a-z][a-z0-9-]*", answer["class"]):
                 raise RuntimeError(f"ours rejected {text!r} with a class that isn't a word: {answer['class']!r}")
-            rows.append({"name": "class", "tags": {"input": text}, "verdict": answer["class"]})
+            rows.append({"name": "class", "tags": {"input": text, "class": answer["class"]}, "verdict": "ok"})
     if params.alternatives:
-        pairs = [json.loads(line) for line in params.alternatives.read_text().splitlines() if line]
-        fits = {"full", "partial"}
-        shaped = lambda p: isinstance(p, list) and len(p) in (2, 3) and all(isinstance(s, str) for s in p)
-        if not all(shaped(p) and (len(p) == 2 or p[2] in fits) for p in pairs):
+        pairs = [json.loads(line) for line in params.alternatives.read_text().splitlines() if line.strip()]
+        if not all(shaped(p) for p in pairs):
             raise ValueError("alternatives: each line is a JSON [input, form] or [input, form, \"full\"|\"partial\"]")
         if len({pair[0] for pair in pairs}) != len(pairs):
             raise ValueError("alternatives: an input has more than one alternative")
