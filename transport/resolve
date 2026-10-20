@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+import os
+from pathlib import Path
+
+from harness.resolution import Resolution
+
+print(Resolution.now(Path(os.environ["BENCHER_IN"])).dump())

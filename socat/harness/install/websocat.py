@@ -22,15 +22,15 @@ class Websocat(Oracle):
     def doc(self) -> Path:
         return self.prefix / "doc.md"
 
-    def version(self) -> tuple[str, str]:
-        if self.pin:
-            return self.pin, "pinned"
-        landed = self.landed(releases)
+    @classmethod
+    def latest(cls) -> str:
+        landed = cls.landed(releases)
         if "/releases/tag/" not in landed:
             raise RuntimeError(f"{releases} redirected to {landed}, not a release tag")
-        return landed.rsplit("/", 1)[-1], "floating"
+        return landed.rsplit("/", 1)[-1]
 
-    def build(self, version: str) -> dict[str, str]:
+    def build(self, pick: dict[str, str]) -> dict[str, str]:
+        version = pick["version"]
         self.binary.parent.mkdir(parents=True, exist_ok=True)
         digest = self.fetch(binaries.format(tag=version, machine=self.machine()), self.binary)
         self.binary.chmod(0o755)

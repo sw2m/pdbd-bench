@@ -62,8 +62,8 @@ socat's acceptances of malformed input are artefacts of that.
 | `pins.oittaa` | latest | a Go module version: `v1.0.3` |
 | `pins.tocat` | latest | a `tocat-core` crate version: `0.3.0` |
 
-Unset, an oracle's latest release is raced. The Salt state writes the pins to a file that
-`oracles` reads, so no pin reaches a shell command line.
+Unset, an oracle's latest release is raced. `resolve` and `oracles` read the pins from
+`params.json`, so no pin reaches a shell command line.
 
 | Artifact | |
 | --- | --- |
@@ -76,9 +76,24 @@ artifact, decided by hand) and any coverage summary, which the consumer renders 
 
 ## Oracles track upstream
 
-`oracles`, called by the Salt state, installs every oracle at its latest release (or its pin):
-socat from upstream's tarball, websocat's release binary and `doc.md`, Go and then oittaa/socat,
-Rust (rustup, stable) and then `tocat/`. Every step verifies what it installed, and any failure
+`resolve` picks every oracle's version (its pin, else its latest release) and the toolchain that
+builds it: the latest stable Go for oittaa/socat, the latest stable Rust for `tocat/`. It prints
+them as one JSON object, which bencher keys the image on and hands back as `resolved.json`:
+
+```json
+{"oittaa": {"go": "go1.27.3", "mode": "floating", "version": "v1.0.3"},
+ "socat": {"mode": "floating", "version": "1.8.1.3"},
+ "tocat": {"mode": "floating", "rust": "1.99.1", "version": "0.3.0"},
+ "websocat": {"mode": "floating", "version": "v1.14.1"}}
+```
+
+`oracles`, called by the Salt state, installs exactly that (resolving the same way itself when
+there is no `resolved.json`): socat from upstream's tarball, websocat's release binary and
+`doc.md`, that Go and then oittaa/socat, that Rust (rustup) and then `tocat/`. What stays
+floating inside a cached image: Debian's packages (the C toolchain that builds socat), and
+`tocat/`'s transitive crates, which have no lockfile. Once each build is verified, its build tree and toolchain are
+removed (all of Go but `bin/`, which verifies oittaa's build info; all of Rust and tocat's
+`target/`), so a rebuild reinstalls them. Every step verifies what it installed, and any failure
 fails provisioning, and with it the bench: if an upstream changes how it ships, the run goes red
 rather than racing something else. socat's downloads are plain http with no signature (its https
 certificate is self-signed), so the tarball's sha256 is recorded on its `oracle` row; Go's and

@@ -1,3 +1,5 @@
+cache = "provisioned" # see README "Runners": keyed on resolve, so an upstream release misses
+
 [fixture]
 path = "../.."
 runner = "transport"

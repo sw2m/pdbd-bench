@@ -43,8 +43,10 @@ behind ppp-project's releases, and a benchmark that races a stale comparator say
 the current one. `transport/pppd` (`harness.Build`) resolves the latest `ppp-project/ppp`
 release, or `params.pins.pppd` when the consumer pins one, downloads ppp's own release tarball
 (download.samba.org, which carries a built `configure` for every version), and builds it into
-`/opt/pppd`. The runner's Salt state calls it during provisioning, so every run spends about a
-minute building it. The tarball comes over TLS and its signature isn't checked; its sha256 is
+`/opt/pppd`. `transport/resolve` prints the version it picks (`{"pppd": {"mode": "floating",
+"version": "2.5.4"}}`), which bencher keys the image on and hands back as `resolved.json`, and
+the runner's Salt state builds exactly that during provisioning. That build takes about a minute;
+a consumer with `cache = "provisioned"` pays it once per pppd release, not on every run. The tarball comes over TLS and its signature isn't checked; its sha256 is
 recorded on the `pppd` row, so the bits that were raced are identifiable and a change in them
 is visible.
 

@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 from harness.install.oracle import Oracle
+from harness.install.toolchain import Rust
 
 crate = "https://crates.io/api/v1/crates/tocat-core"
-rustup = "https://static.rust-lang.org/rustup/dist/{machine}-unknown-linux-gnu/rustup-init"
 
 
 class Tocat(Oracle):
@@ -24,36 +22,24 @@ class Tocat(Oracle):
     def schemes(self) -> Path:
         return self.prefix / "parse.rs"
 
+    @property
+    def toolchain(self) -> Rust:
+        return Rust(self.prefix)
+
     def env(self) -> dict[str, str]:
-        return {
-            **os.environ,
-            "RUSTUP_HOME": str(self.prefix / "rustup"),
-            "CARGO_HOME": str(self.prefix / "cargo"),
-            "PATH": f"{self.prefix / 'cargo' / 'bin'}:{os.environ.get('PATH', '')}",
-        }
+        return self.toolchain.env()
 
-    def toolchain(self) -> None:
-        if os.access(self.prefix / "cargo" / "bin" / "cargo", os.X_OK):
-            return
-        url = rustup.format(machine=self.machine())
-        expected = self.read(f"{url}.sha256").decode().split()[0]
-        with tempfile.TemporaryDirectory() as work:
-            init = Path(work, "rustup-init")
-            digest = self.fetch(url, init)
-            if digest != expected:
-                raise RuntimeError(f"rustup-init: sha256 {digest}, static.rust-lang.org lists {expected}")
-            init.chmod(0o755)
-            command = [str(init), "-y", "--no-modify-path", "--profile", "minimal", "--default-toolchain", "stable"]
-            subprocess.run(command, env=self.env(), check=True, stdout=subprocess.DEVNULL)
+    @classmethod
+    def latest(cls) -> str:
+        return str(json.loads(cls.read(crate))["crate"]["max_stable_version"])
 
-    def version(self) -> tuple[str, str]:
-        if self.pin:
-            return self.pin, "pinned"
-        found = json.loads(self.read(crate))["crate"]["max_stable_version"]
-        return str(found), "floating"
+    @classmethod
+    def pick(cls, pin: str) -> dict[str, str]:
+        return {**super().pick(pin), "rust": Rust.latest()}
 
-    def build(self, version: str) -> dict[str, str]:
-        self.toolchain()
+    def build(self, pick: dict[str, str]) -> dict[str, str]:
+        version = pick["version"]
+        self.toolchain.install(pick["rust"])
         work = self.prefix / "src"
         shutil.rmtree(work, ignore_errors=True)
         shutil.copytree(Path(__file__).resolve().parents[2] / "tocat", work)
@@ -75,6 +61,10 @@ class Tocat(Oracle):
             raise RuntimeError(f"tocat-core {version} has no src/endpoint/parse.rs: its layout changed")
         shutil.copy2(source, self.schemes)
         return {"toolchain": self.said(["rustc", "--version"], env=self.env())}
+
+    def prune(self) -> None:
+        shutil.rmtree(self.prefix / "src" / "target")
+        self.toolchain.prune()
 
     def verify(self, version: str) -> None:
         said = self.said([str(self.binary)], stdin='"tcp:127.0.0.1:1"\n')

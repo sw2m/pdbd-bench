@@ -15,8 +15,9 @@ tarballs = "https://download.samba.org/pub/ppp/ppp-{version}.tar.gz"
 
 
 class Build:
-    def __init__(self, pin: str = "", prefix: Path = Path("/opt/pppd")) -> None:
-        self.pin = pin
+    name = "pppd"
+
+    def __init__(self, prefix: Path = Path("/opt/pppd")) -> None:
         self.prefix = prefix
 
     @property
@@ -34,21 +35,27 @@ class Build:
         if version not in said.split():
             raise RuntimeError(f"{self.binary} --version says {said!r}, not pppd {version}")
 
-    def version(self) -> tuple[str, str]:
-        if self.pin:
-            return self.pin, "pinned"
+    @staticmethod
+    def latest() -> str:
         with urllib.request.urlopen(releases, timeout=60) as response:
             landed = response.geturl()
         if "/releases/tag/" not in landed:
             raise RuntimeError(f"{releases} redirected to {landed}, not a release tag")
         tag = landed.rsplit("/", 1)[-1]
-        return tag.removeprefix("ppp-").removeprefix("v"), "floating"
+        return tag.removeprefix("ppp-").removeprefix("v")
 
-    def run(self) -> None:
-        version, mode = self.version()
+    @classmethod
+    def pick(cls, pin: str) -> dict[str, str]:
+        if pin:
+            return {"version": pin, "mode": "pinned"}
+        return {"version": cls.latest(), "mode": "floating"}
+
+    def run(self, pick: dict[str, str]) -> None:
+        version, mode = pick["version"], pick["mode"]
         marker = self.prefix / "VERSION"
         if marker.exists() and marker.read_text().strip() == version:
             self.verify(version)
+            (self.prefix / "MODE").write_text(f"{mode}\n")
             return
         url = tarballs.format(version=version)
         digest = hashlib.sha256()

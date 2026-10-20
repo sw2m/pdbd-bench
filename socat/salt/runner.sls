@@ -1,4 +1,3 @@
-{% set pins = salt['pillar.get']('bencher:params:pins', {}) %}
 socat:
   pkg.installed:
     - pkgs:
@@ -10,15 +9,14 @@ socat:
       - libreadline-dev
       - libwrap0-dev
 
-pins:
-  file.serialize:
-    - name: /var/lib/bencher/pins.json
-    - dataset: {{ pins | json }}
-    - serializer: json
+apt:
+  cmd.run:
+    - name: apt-get clean # see README "Runners": a cached image carries no downloaded packages
+    - require:
+      - pkg: socat
 
 oracles:
   cmd.run:
-    - name: /var/lib/bencher/runner/oracles /var/lib/bencher/pins.json
+    - name: /var/lib/bencher/runner/oracles {{ grains['bencher']['inputs'] }}
     - require:
       - pkg: socat
-      - file: pins

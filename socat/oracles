@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-import json
 import sys
 from pathlib import Path
 
-from harness.install import Oittaa, Socat, Tocat, Websocat
+from harness.install import Resolution
 
-pins = json.loads(Path(sys.argv[1]).read_text()) if len(sys.argv) > 1 else {}
-for oracle in (Socat, Websocat, Oittaa, Tocat):
-    oracle(str(pins.get(oracle.name, ""))).run()
+Resolution.load(Path(sys.argv[1])).install()

@@ -32,6 +32,7 @@ Each runner is one directory, laid out by bencher's runner contract
   runner.toml      image, container or vm, declared reporters
   salt/runner.sls  what the runner needs installed, from bencher's pillar
   run              the entrypoint: reads $BENCHER_IN, prints the result JSON
+  resolve          prints the exact versions of what the runner installs, which bencher puts into the image key
   harness/         the entrypoint's Python package
   <other scripts>  helpers its Salt state calls (transport/pppd builds its comparator; socat/oracles installs its oracles)
 ```
@@ -39,6 +40,17 @@ Each runner is one directory, laid out by bencher's runner contract
 Runners here are written in Python 3 against the standard library only. bencher guarantees
 `python3` in every guest (sw2m/bencher#17), so a runner written this way moves to another OS
 family without a rewrite. Anything else a runner needs, its Salt state installs.
+
+A runner that installs something floating (a latest release) ships a `resolve`, so a consumer
+can cache its provisioned image (`cache = "provisioned"` in `bench.toml`, bencher 0.3.0 or
+later): bencher keys the image on what `resolve` printed, so a new upstream release misses the
+cache instead of being masked by it, and the Salt state installs exactly that
+(`$BENCHER_IN/resolved.json`). Under an older bencher, with no `resolved.json`, the runner
+resolves at provisioning as before.
+
+Since a provisioned image is exported, cached and imported on every run, a runner's states leave
+in it only what a run uses: build trees, toolchains a run doesn't call, and downloaded packages
+(`apt-get clean`) are removed once the build is verified.
 
 ### Runners in this repo
 
