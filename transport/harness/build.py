@@ -16,6 +16,7 @@ tarballs = "https://download.samba.org/pub/ppp/ppp-{version}.tar.gz"
 
 class Build:
     name = "pppd"
+    keys = ("version", "mode")
 
     def __init__(self, prefix: Path = Path("/opt/pppd")) -> None:
         self.prefix = prefix
@@ -35,8 +36,8 @@ class Build:
         if version not in said.split():
             raise RuntimeError(f"{self.binary} --version says {said!r}, not pppd {version}")
 
-    @staticmethod
-    def latest() -> str:
+    @classmethod
+    def latest(cls) -> str:
         with urllib.request.urlopen(releases, timeout=60) as response:
             landed = response.geturl()
         if "/releases/tag/" not in landed:

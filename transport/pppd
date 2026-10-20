@@ -4,4 +4,6 @@ from pathlib import Path
 
 from harness.resolution import Resolution
 
+if len(sys.argv) != 2:
+    sys.exit("usage: pppd <the bencher inputs directory>")
 Resolution.load(Path(sys.argv[1])).install()

@@ -48,9 +48,17 @@ cache instead of being masked by it, and the Salt state installs exactly that
 (`$BENCHER_IN/resolved.json`). Under an older bencher, with no `resolved.json`, the runner
 resolves at provisioning as before.
 
-Since a provisioned image is exported, cached and imported on every run, a runner's states leave
-in it only what a run uses: build trees, toolchains a run doesn't call, and downloaded packages
-(`apt-get clean`) are removed once the build is verified.
+A runner whose `resolve` names a version must reject a pin it doesn't know, so a misspelled pin
+fails at launch rather than quietly floating. And an empty `resolved.json` is an error, not the
+older-bencher fallback.
+
+Since a provisioned image is exported, cached and imported on every run, a runner removes what
+it downloaded only to build (its build trees, the Go and Rust toolchains, apt's downloaded
+packages) once the build is verified. Debian's compilers and `-dev` packages stay.
+
+What a key can't see: a version string re-published with new bits, a re-rolled tarball or a
+moved tag, keeps its key. Each runner records what was raced (the sha256s on its rows), so the
+change shows after the fact, not as a miss.
 
 ### Runners in this repo
 

@@ -7,6 +7,7 @@ from harness.install.remote import Remote
 
 class Oracle(Remote):
     name = ""
+    keys: tuple[str, ...] = ("version", "mode")
 
     def __init__(self, root: Path = Path("/opt/oracles")) -> None:
         self.prefix = root / self.name
@@ -42,8 +43,8 @@ class Oracle(Remote):
         self.verify(version)
         for key, value in {**facts, "mode": mode}.items():
             (self.prefix / key.upper()).write_text(f"{value}\n")
-        marker.write_text(f"{version}\n")
         self.prune()
+        marker.write_text(f"{version}\n")
         print(f"{self.name} {version} ({mode}) installed into {self.prefix}")
 
     def provenance(self) -> dict[str, str]:

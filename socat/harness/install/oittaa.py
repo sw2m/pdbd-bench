@@ -14,6 +14,7 @@ proxy = f"https://proxy.golang.org/{module}/@latest"  # see https://go.dev/ref/m
 
 class Oittaa(Oracle):
     name = "oittaa"
+    keys = ("version", "mode", "go")
 
     @property
     def binary(self) -> Path:

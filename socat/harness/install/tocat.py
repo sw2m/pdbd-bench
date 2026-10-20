@@ -13,6 +13,7 @@ crate = "https://crates.io/api/v1/crates/tocat-core"
 
 class Tocat(Oracle):
     name = "tocat"
+    keys = ("version", "mode", "rust")
 
     @property
     def binary(self) -> Path:

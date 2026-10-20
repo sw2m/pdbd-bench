@@ -40,15 +40,19 @@ socat, both L2 ends and both iperf3 ends.
 pppd is installed by Python, not by the distro's package manager, so that the comparator is
 always the latest upstream release. Debian 12 packages pppd 2.4.9 and Debian 13 2.5.2, both
 behind ppp-project's releases, and a benchmark that races a stale comparator says nothing about
-the current one. `transport/pppd` (`harness.Build`) resolves the latest `ppp-project/ppp`
-release, or `params.pins.pppd` when the consumer pins one, downloads ppp's own release tarball
-(download.samba.org, which carries a built `configure` for every version), and builds it into
-`/opt/pppd`. `transport/resolve` prints the version it picks (`{"pppd": {"mode": "floating",
-"version": "2.5.4"}}`), which bencher keys the image on and hands back as `resolved.json`, and
-the runner's Salt state builds exactly that during provisioning. That build takes about a minute;
-a consumer with `cache = "provisioned"` pays it once per pppd release, not on every run. The tarball comes over TLS and its signature isn't checked; its sha256 is
-recorded on the `pppd` row, so the bits that were raced are identifiable and a change in them
-is visible.
+the current one. `transport/resolve` (`harness.Resolution`) picks the latest `ppp-project/ppp`
+release, or `params.pins.pppd` when the consumer pins one (an unknown pin fails it), and prints
+it: `{"pppd": {"mode": "floating", "version": "2.5.4"}}`. bencher keys the image on that and
+hands it back as `resolved.json`. `transport/pppd`, called by the runner's Salt state, then
+downloads that version's tarball from ppp itself (download.samba.org, which carries a built
+`configure` for every version) and builds it into `/opt/pppd` (`harness.Build`). With no
+`resolved.json`, as under an older bencher, it resolves the same way itself.
+
+The build takes about a minute; a consumer with `cache = "provisioned"` pays it once per pppd
+release, not on every run. What stays floating inside a cached image: Debian's packages, both
+the C toolchain that builds pppd and the `socat`, `iperf3` and `iproute2` the pairings run. The
+tarball comes over TLS and its signature isn't checked; its sha256 is recorded on the `pppd`
+row, so the bits that were raced are identifiable and a change in them is visible.
 
 Every failure on that path fails the run, so an upstream change to how ppp is released or
 installed surfaces as a red bench instead of a quietly skipped comparator:

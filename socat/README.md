@@ -89,11 +89,17 @@ them as one JSON object, which bencher keys the image on and hands back as `reso
 
 `oracles`, called by the Salt state, installs exactly that (resolving the same way itself when
 there is no `resolved.json`): socat from upstream's tarball, websocat's release binary and
-`doc.md`, that Go and then oittaa/socat, that Rust (rustup) and then `tocat/`. What stays
-floating inside a cached image: Debian's packages (the C toolchain that builds socat), and
-`tocat/`'s transitive crates, which have no lockfile. Once each build is verified, its build tree and toolchain are
-removed (all of Go but `bin/`, which verifies oittaa's build info; all of Rust and tocat's
-`target/`), so a rebuild reinstalls them. Every step verifies what it installed, and any failure
+`doc.md`, that Go and then oittaa/socat, that Rust (rustup) and then `tocat/`. A pin naming no
+oracle fails `resolve`.
+
+What stays floating inside a cached image:
+- Debian's packages, including the C toolchain that builds socat;
+- `tocat/`'s transitive crates, which have no lockfile;
+- `rustup-init`, the latest installer, which installs the resolved Rust.
+
+Once each build is verified, its build tree and toolchain are removed: all of Go but `bin/`,
+which verifies oittaa's build info, and all of Rust and tocat's `target/`. A rebuild reinstalls
+them. Every step verifies what it installed, and any failure
 fails provisioning, and with it the bench: if an upstream changes how it ships, the run goes red
 rather than racing something else. socat's downloads are plain http with no signature (its https
 certificate is self-signed), so the tarball's sha256 is recorded on its `oracle` row; Go's and
