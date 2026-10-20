@@ -63,9 +63,10 @@ socat's acceptances of malformed input are artefacts of that.
 | `pins.tocat` | latest | a `tocat-core` crate version: `0.3.0` |
 
 Unset, an oracle's latest release is raced. The pins are what `resolve` reads (from
-`bench.toml`) to write the consumer's `resolved.json`; a `resolved.json` naming other versions
-wins. With no `resolved.json`, `oracles` reads them from `params.json`, so no pin reaches a shell
-command line.
+`bench.toml`) to write the consumer's `resolved.json`. A `resolved.json` that disagrees with a pin
+in `params.json` fails provisioning, so `--set params.pins.<oracle>=...` needs `resolved.json`
+regenerated with the same pin. With no `resolved.json`, `oracles` reads the pins from
+`params.json`, so no pin reaches a shell command line.
 
 | Artifact | |
 | --- | --- |

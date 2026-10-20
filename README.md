@@ -57,7 +57,18 @@ latest release. With the file generated before every run, the key moves only whe
 release does. With it committed, it moves when the consumer bumps it.
 
 The Salt state installs exactly what the file names, and validates it first: every name the
-runner installs, and each one's fields. With no file (an empty `resolved.json`), a run that
+runner installs, exactly each one's fields, and agreement with the bench's pins as bencher staged
+them. A pin overridden with `--set params.pins...` without regenerating the file fails rather
+than racing something else.
+
+The generated file is the consumer's, and this repo's own `ci/*/resolved.json` are git-ignored:
+CI writes them before each run. Write them the same way before running `bencher lint` or
+`bencher run` on a fresh checkout, since without them both fail the load:
+
+```sh
+python3 socat/resolve ci/socat > ci/socat/resolved.json
+python3 transport/resolve ci/transport > ci/transport/resolved.json
+``` With no file (an empty `resolved.json`), a run that
 caches nothing (`cache = "base"`, or bencher before 0.3.0) resolves at provisioning time instead.
 Priming a provisioned image fails, since it would cache whatever is latest that day under a key
 that never moves. bencher 0.3.0 is not supported: it runs `resolve` itself, in the guest, without
