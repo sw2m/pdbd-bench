@@ -62,8 +62,11 @@ socat's acceptances of malformed input are artefacts of that.
 | `pins.oittaa` | latest | a Go module version: `v1.0.3` |
 | `pins.tocat` | latest | a `tocat-core` crate version: `0.3.0` |
 
-Unset, an oracle's latest release is raced. The Salt state writes the pins to a file that
-`oracles` reads, so no pin reaches a shell command line.
+Unset, an oracle's latest release is raced. The pins are what `resolve` reads (from
+`bench.toml`) to write the consumer's `resolved.json`. A `resolved.json` that disagrees with a pin
+in `params.json` fails provisioning, so `--set params.pins.<oracle>=...` needs `resolved.json`
+regenerated with the same pin. With no `resolved.json`, `oracles` reads the pins from
+`params.json`, so no pin reaches a shell command line.
 
 | Artifact | |
 | --- | --- |
@@ -76,9 +79,31 @@ artifact, decided by hand) and any coverage summary, which the consumer renders 
 
 ## Oracles track upstream
 
-`oracles`, called by the Salt state, installs every oracle at its latest release (or its pin):
-socat from upstream's tarball, websocat's release binary and `doc.md`, Go and then oittaa/socat,
-Rust (rustup, stable) and then `tocat/`. Every step verifies what it installed, and any failure
+The consumer's `resolved.json` names every oracle's version and the toolchain that builds it.
+`resolve` writes one (see the repo's README, "Runners"): each oracle's pin, else its latest
+release, plus the latest stable Go for oittaa/socat and the latest stable Rust for `tocat/`:
+
+```json
+{"oittaa": {"go": "go1.27.3", "mode": "floating", "version": "v1.0.3"},
+ "socat": {"mode": "floating", "version": "1.8.1.3"},
+ "tocat": {"mode": "floating", "rust": "1.99.1", "version": "0.3.0"},
+ "websocat": {"mode": "floating", "version": "v1.14.1"}}
+```
+
+`oracles`, called by the Salt state, installs exactly that: socat from upstream's tarball,
+websocat's release binary and `doc.md`, that Go and then oittaa/socat, that Rust (rustup) and
+then `tocat/`. A pin naming no oracle fails `resolve`, and a `resolved.json` missing an oracle or
+a field fails provisioning. With no `resolved.json`, it resolves the same way itself, except
+while priming a provisioned image, which fails instead.
+
+What stays floating inside a cached image:
+- Debian's packages, including the C toolchain that builds socat;
+- `tocat/`'s transitive crates, which have no lockfile;
+- `rustup-init`, the latest installer, which installs the resolved Rust.
+
+Once each build is verified, its build tree and toolchain are removed: all of Go but `bin/`,
+which verifies oittaa's build info, and all of Rust and tocat's `target/`. A rebuild reinstalls
+them. Every step verifies what it installed, and any failure
 fails provisioning, and with it the bench: if an upstream changes how it ships, the run goes red
 rather than racing something else. socat's downloads are plain http with no signature (its https
 certificate is self-signed), so the tarball's sha256 is recorded on its `oracle` row; Go's and

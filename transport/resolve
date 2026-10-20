@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+import sys
+import tomllib
+from pathlib import Path
+
+from harness.resolution import Resolution
+
+if len(sys.argv) != 2:
+    sys.exit("usage: resolve <bench dir>  (prints the resolved.json for that bench.toml)")
+with (Path(sys.argv[1]) / "bench.toml").open("rb") as file:
+    pins = tomllib.load(file).get("params", {}).get("pins", {})
+print(Resolution.now(pins).dump())

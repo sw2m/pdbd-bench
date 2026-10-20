@@ -24,8 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: resolve ci/transport
+        run: python3 transport/resolve ci/transport > ci/transport/resolved.json # see README "Runners"
       - id: bench
-        uses: sw2m/bencher@4957a77d6fe3ef2704ad0935425fcc64a3e764ab # v0.1.0
+        uses: sw2m/bencher@3b05cbb3eae4a29b5c608135b4a0c4fa4d2cc61f # v0.4.0
         with:
           bench: ci/transport
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -40,8 +42,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: resolve ci/socat
+        run: python3 socat/resolve ci/socat > ci/socat/resolved.json # see README "Runners"
       - id: bench
-        uses: sw2m/bencher@4957a77d6fe3ef2704ad0935425fcc64a3e764ab # v0.1.0
+        uses: sw2m/bencher@3b05cbb3eae4a29b5c608135b4a0c4fa4d2cc61f # v0.4.0
         with:
           bench: ci/socat
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

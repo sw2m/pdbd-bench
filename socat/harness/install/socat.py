@@ -19,16 +19,16 @@ class Socat(Oracle):
     def binary(self) -> Path:
         return self.prefix / "bin" / "socat"
 
-    def version(self) -> tuple[str, str]:
-        if self.pin:
-            return self.pin, "pinned"
-        index = self.read(downloads).decode(errors="replace")
+    @classmethod
+    def latest(cls) -> str:
+        index = cls.read(downloads).decode(errors="replace")
         found = set(re.findall(r"socat-(\d+(?:\.\d+)+)\.tar\.gz", index))
         if not found:
             raise RuntimeError(f"{downloads} lists no socat-<version>.tar.gz")
-        return max(found, key=lambda v: tuple(int(p) for p in v.split("."))), "floating"
+        return max(found, key=lambda v: tuple(int(p) for p in v.split(".")))
 
-    def build(self, version: str) -> dict[str, str]:
+    def build(self, pick: dict[str, str]) -> dict[str, str]:
+        version = pick["version"]
         with tempfile.TemporaryDirectory() as work:
             tarball = Path(work, "socat.tar.gz")
             digest = self.fetch(f"{downloads}socat-{version}.tar.gz", tarball)

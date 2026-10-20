@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
+import shutil
 from pathlib import Path
 
 from harness.install.oracle import Oracle
+from harness.install.toolchain import Go
 
 module = "github.com/oittaa/socat"
-toolchains = "https://go.dev/dl/?mode=json"
-archs = {"x86_64": "amd64", "aarch64": "arm64"}
+proxy = f"https://proxy.golang.org/{module}/@latest"  # see https://go.dev/ref/mod#goproxy-protocol
 
 
 class Oittaa(Oracle):
     name = "oittaa"
+    keys = ("version", "mode", "go")
 
     @property
     def binary(self) -> Path:
@@ -24,8 +25,12 @@ class Oittaa(Oracle):
         return self.prefix / "bin" / "walker"
 
     @property
+    def toolchain(self) -> Go:
+        return Go(self.prefix / "go")
+
+    @property
     def go(self) -> Path:
-        return self.prefix / "go" / "bin" / "go"
+        return self.toolchain.binary
 
     @property
     def source(self) -> Path:
@@ -34,29 +39,13 @@ class Oittaa(Oracle):
     def env(self) -> dict[str, str]:
         return {
             **os.environ,
-            "GOROOT": str(self.prefix / "go"),
+            "GOROOT": str(self.toolchain.root),
             "GOPATH": str(self.prefix / "gopath"),
             "GOBIN": str(self.prefix / "bin"),
             "GOCACHE": str(self.prefix / "cache"),
             "GOTOOLCHAIN": "local",
-            "PATH": f"{self.prefix / 'go' / 'bin'}:{os.environ.get('PATH', '')}",
+            "PATH": f"{self.go.parent}:{os.environ.get('PATH', '')}",
         }
-
-    def toolchain(self) -> None:
-        if os.access(self.go, os.X_OK):
-            return
-        stable = next(r for r in json.loads(self.read(toolchains)) if r["stable"])
-        arch = archs[self.machine()]
-        file = next(
-            f for f in stable["files"] if f["os"] == "linux" and f["arch"] == arch and f["kind"] == "archive"
-        )
-        with tempfile.TemporaryDirectory() as work:
-            tarball = Path(work, file["filename"])
-            digest = self.fetch(f"https://go.dev/dl/{file['filename']}", tarball)
-            if digest != file["sha256"]:
-                raise RuntimeError(f"{file['filename']}: sha256 {digest}, go.dev lists {file['sha256']}")
-            self.prefix.mkdir(parents=True, exist_ok=True)
-            self.unpack(tarball, self.prefix)
 
     def download(self, version: str) -> dict[str, str]:
         said = self.said(
@@ -67,13 +56,17 @@ class Oittaa(Oracle):
             raise RuntimeError(f"go mod download {module}@{version}: {found['Error']}")
         return found
 
-    def version(self) -> tuple[str, str]:
-        self.toolchain()
-        if self.pin:
-            return self.pin, "pinned"
-        return self.download("latest")["Version"], "floating"
+    @classmethod
+    def latest(cls) -> str:
+        return str(json.loads(cls.read(proxy))["Version"])
 
-    def build(self, version: str) -> dict[str, str]:
+    @classmethod
+    def pick(cls, pin: str) -> dict[str, str]:
+        return {**super().pick(pin), "go": Go.latest()}
+
+    def build(self, pick: dict[str, str]) -> dict[str, str]:
+        version = pick["version"]
+        self.toolchain.install(pick["go"])
         found = self.download(version)
         if not list(Path(found["Dir"], "internal", "parse").glob("*_test.go")):
             raise RuntimeError(f"{module}@{version} has no internal/parse/*_test.go: its layout changed")
@@ -84,6 +77,11 @@ class Oittaa(Oracle):
         if not os.access(self.walker, os.X_OK):
             raise RuntimeError(f"the oittaa test walker didn't build: {said[-400:]}")
         return {"source": found["Dir"], "toolchain": self.said([str(self.go), "version"], env=self.env())}
+
+    def prune(self) -> None:
+        shutil.rmtree(self.prefix / "cache")
+        shutil.rmtree(self.prefix / "gopath" / "pkg" / "mod" / "cache")
+        self.toolchain.prune()
 
     def verify(self, version: str) -> None:
         if "Address types:" not in self.said([str(self.binary), "-hhh"]):

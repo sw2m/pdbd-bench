@@ -32,7 +32,4 @@ class Params:
         unknown = set(raw) - {"pins"}
         if unknown:
             raise ValueError(f"the socat runner takes only pins, got {sorted(unknown)}")
-        oracles = {"socat", "websocat", "oittaa", "tocat"}
-        if set(raw.get("pins", {})) - oracles:
-            raise ValueError(f"pins name an unknown oracle: {sorted(set(raw['pins']) - oracles)}")
         return cls(verdict=verdict, hand=artifact("hand"), alternatives=artifact("alternatives"))

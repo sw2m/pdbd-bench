@@ -1,3 +1,6 @@
+cache = "provisioned" # see README "Runners": keyed on resolved.json, so an upstream release misses
+resolved = "resolved.json"
+
 [fixture]
 path = "../.."
 runner = "transport"
