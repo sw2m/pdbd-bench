@@ -62,8 +62,10 @@ socat's acceptances of malformed input are artefacts of that.
 | `pins.oittaa` | latest | a Go module version: `v1.0.3` |
 | `pins.tocat` | latest | a `tocat-core` crate version: `0.3.0` |
 
-Unset, an oracle's latest release is raced. `resolve` and `oracles` read the pins from
-`params.json`, so no pin reaches a shell command line.
+Unset, an oracle's latest release is raced. The pins are what `resolve` reads (from
+`bench.toml`) to write the consumer's `resolved.json`; a `resolved.json` naming other versions
+wins. With no `resolved.json`, `oracles` reads them from `params.json`, so no pin reaches a shell
+command line.
 
 | Artifact | |
 | --- | --- |
@@ -76,9 +78,9 @@ artifact, decided by hand) and any coverage summary, which the consumer renders 
 
 ## Oracles track upstream
 
-`resolve` picks every oracle's version (its pin, else its latest release) and the toolchain that
-builds it: the latest stable Go for oittaa/socat, the latest stable Rust for `tocat/`. It prints
-them as one JSON object, which bencher keys the image on and hands back as `resolved.json`:
+The consumer's `resolved.json` names every oracle's version and the toolchain that builds it.
+`resolve` writes one (see the repo's README, "Runners"): each oracle's pin, else its latest
+release, plus the latest stable Go for oittaa/socat and the latest stable Rust for `tocat/`:
 
 ```json
 {"oittaa": {"go": "go1.27.3", "mode": "floating", "version": "v1.0.3"},
@@ -87,10 +89,11 @@ them as one JSON object, which bencher keys the image on and hands back as `reso
  "websocat": {"mode": "floating", "version": "v1.14.1"}}
 ```
 
-`oracles`, called by the Salt state, installs exactly that (resolving the same way itself when
-there is no `resolved.json`): socat from upstream's tarball, websocat's release binary and
-`doc.md`, that Go and then oittaa/socat, that Rust (rustup) and then `tocat/`. A pin naming no
-oracle fails `resolve`.
+`oracles`, called by the Salt state, installs exactly that: socat from upstream's tarball,
+websocat's release binary and `doc.md`, that Go and then oittaa/socat, that Rust (rustup) and
+then `tocat/`. A pin naming no oracle fails `resolve`, and a `resolved.json` missing an oracle or
+a field fails provisioning. With no `resolved.json`, it resolves the same way itself, except
+while priming a provisioned image, which fails instead.
 
 What stays floating inside a cached image:
 - Debian's packages, including the C toolchain that builds socat;

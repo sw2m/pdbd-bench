@@ -4,6 +4,6 @@ from pathlib import Path
 
 from harness.install import Resolution
 
-if len(sys.argv) != 2:
-    sys.exit("usage: oracles <the bencher inputs directory>")
-Resolution.load(Path(sys.argv[1])).install()
+if len(sys.argv) != 3:
+    sys.exit("usage: oracles <the bencher inputs directory> <the bencher phase>")
+Resolution.load(Path(sys.argv[1]), sys.argv[2]).install()

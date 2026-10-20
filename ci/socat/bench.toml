@@ -1,4 +1,5 @@
-cache = "provisioned" # see README "Runners": keyed on resolve, so an upstream release misses
+cache = "provisioned" # see README "Runners": keyed on resolved.json, so an upstream release misses
+resolved = "resolved.json"
 
 [fixture]
 path = "../.."

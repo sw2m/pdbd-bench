@@ -25,8 +25,7 @@ class Resolution:
         self.picks = picks
 
     @classmethod
-    def now(cls, inputs: Path) -> Resolution:
-        pins = json.loads((inputs / "params.json").read_text()).get("pins", {})
+    def now(cls, pins: dict[str, str]) -> Resolution:
         names = {oracle.name for oracle in oracles}
         if not isinstance(pins, dict) or set(pins) - names:
             raise ValueError(f"pins must map {sorted(names)} to versions, got {pins!r}")
@@ -35,11 +34,17 @@ class Resolution:
         return cls({oracle.name: oracle.pick(pins.get(oracle.name, "")) for oracle in oracles})
 
     @classmethod
-    def load(cls, inputs: Path) -> Resolution:
+    def load(cls, inputs: Path, phase: str) -> Resolution:
         resolved = inputs / "resolved.json"
-        if not resolved.exists():
-            return cls.now(inputs)
-        return cls(json.loads(resolved.read_text()))
+        picks = json.loads(resolved.read_text()) if resolved.exists() else {}
+        if picks:
+            return cls(picks)
+        if phase == "prime":
+            raise RuntimeError(
+                "a provisioned image needs the consumer's resolved.json (bench.toml resolved), "
+                "or it would cache whatever is latest today: see README \"Runners\""
+            )
+        return cls.now(json.loads((inputs / "params.json").read_text()).get("pins", {}))
 
     def install(self) -> None:
         for oracle in oracles:

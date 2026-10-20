@@ -17,6 +17,6 @@ apt:
 
 oracles:
   cmd.run:
-    - name: /var/lib/bencher/runner/oracles {{ grains['bencher']['inputs'] }}
+    - name: /var/lib/bencher/runner/oracles {{ grains['bencher']['inputs'] }} {{ salt['pillar.get']('bencher:phase', 'run') }}
     - require:
       - pkg: socat

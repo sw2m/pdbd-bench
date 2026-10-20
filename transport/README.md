@@ -40,13 +40,14 @@ socat, both L2 ends and both iperf3 ends.
 pppd is installed by Python, not by the distro's package manager, so that the comparator is
 always the latest upstream release. Debian 12 packages pppd 2.4.9 and Debian 13 2.5.2, both
 behind ppp-project's releases, and a benchmark that races a stale comparator says nothing about
-the current one. `transport/resolve` (`harness.Resolution`) picks the latest `ppp-project/ppp`
-release, or `params.pins.pppd` when the consumer pins one (an unknown pin fails it), and prints
-it: `{"pppd": {"mode": "floating", "version": "2.5.4"}}`. bencher keys the image on that and
-hands it back as `resolved.json`. `transport/pppd`, called by the runner's Salt state, then
-downloads that version's tarball from ppp itself (download.samba.org, which carries a built
-`configure` for every version) and builds it into `/opt/pppd` (`harness.Build`). With no
-`resolved.json`, as under an older bencher, it resolves the same way itself.
+the current one. The consumer's `resolved.json` names the pppd to build, and
+`transport/resolve` writes one (see the repo's README, "Runners"): `params.pins.pppd` when the
+bench pins one (an unknown pin fails it), else the latest `ppp-project/ppp` release, as
+`{"pppd": {"mode": "floating", "version": "2.5.4"}}`. bencher keys a provisioned image on that.
+`transport/pppd`, called by the runner's Salt state, downloads that version's tarball from ppp
+itself (download.samba.org, which carries a built `configure` for every version) and builds it
+into `/opt/pppd` (`harness.Build`). With no `resolved.json`, it resolves the same way itself,
+except while priming a provisioned image, which fails instead.
 
 The build takes about a minute; a consumer with `cache = "provisioned"` pays it once per pppd
 release, not on every run. What stays floating inside a cached image: Debian's packages, both
