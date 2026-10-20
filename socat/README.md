@@ -14,11 +14,12 @@ anything parses, so no oracle can reach a network, and fails if the namespace ha
 | `corpus` | `input`, `family` | `ok`: one per corpus entry; `family` is `<origin>:<kind>[:<family>]`, e.g. `socat:type:TCP`, `socat:option:SOCKET`, `websocat:overlay`, `hand:lexer` |
 | `parse` | `impl` (`socat`, `websocat`, `oittaa`, `tocat`, `ours`), `input` | whether that parser accepts the input |
 | `print` | `input`, `canonical` | `ok`: ours accepted the input and printed it as `canonical` |
-| `alternative` | `input`, `form` | whether ours accepts `form`, the consumer's stand-in for an input it rejects |
+| `class` | `input` | the class ours gave an input it rejected (e.g. `excluded-openssl`, `deferred`, `invalid`), when its `verdict` answer names one |
+| `alternative` | `input`, `form`, and `fit` (`full` or `partial`) when the consumer gave one | whether ours accepts `form`, the consumer's stand-in for an input it rejects |
 | `oracle` | `impl`, `version`, `mode` (`floating` or `pinned`), and what identifies the build: `sha256` (socat's tarball, websocat's binary), `toolchain`, `source` (oittaa's module) | `ok`: the oracle that was raced |
 
-`ours`, `print` and `alternative` rows need the `verdict` artifact; without it only the oracles are
-raced.
+`ours`, `print`, `class` and `alternative` rows need the `verdict` artifact; without it only the
+oracles are raced.
 
 ## Corpus
 
@@ -70,9 +71,9 @@ regenerated with the same pin. With no `resolved.json`, `oracles` reads the pins
 
 | Artifact | |
 | --- | --- |
-| `verdict` | ours: an executable for the guest that reads one JSON string per line on stdin and answers each with one JSON line: `{"ok": true, "canonical": "<print>"}` or `{"ok": false, ...}` (pdbd's `examples/verdict.rs`, built static) |
+| `verdict` | ours: an executable for the guest that reads one JSON string per line on stdin and answers each with one JSON line: `{"ok": true, "canonical": "<print>"}` or `{"ok": false, ...}`, optionally with a `"class"` word naming why it rejects (pdbd's `examples/verdict.rs`, built static) |
 | `hand` | extra corpus entries (above) |
-| `alternatives` | one JSON `[input, form]` pair per line: an input ours rejects and the form it accepts instead |
+| `alternatives` | one JSON `[input, form]` or `[input, form, fit]` per line: an input ours rejects, the form it accepts instead, and optionally whether that form is a `full` or `partial` stand-in |
 
 What this runner leaves to its consumer: which inputs have an alternative (the `alternatives`
 artifact, decided by hand) and any coverage summary, which the consumer renders from the rows.

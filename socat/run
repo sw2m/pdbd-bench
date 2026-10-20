@@ -65,13 +65,20 @@ else:
             raise RuntimeError(f"ours accepted {text!r} without a canonical print")
         if answer["ok"]:
             rows.append({"name": "print", "tags": {"input": text, "canonical": answer["canonical"]}, "verdict": "ok"})
+        elif "class" in answer:
+            if not isinstance(answer["class"], str) or not answer["class"]:
+                raise RuntimeError(f"ours rejected {text!r} with a class that isn't a word: {answer['class']!r}")
+            rows.append({"name": "class", "tags": {"input": text}, "verdict": answer["class"]})
     if params.alternatives:
         pairs = [json.loads(line) for line in params.alternatives.read_text().splitlines() if line]
-        if not all(isinstance(p, list) and len(p) == 2 and all(isinstance(s, str) for s in p) for p in pairs):
-            raise ValueError("alternatives: each line is a JSON [input, form] pair of strings")
+        fits = {"full", "partial"}
+        shaped = lambda p: isinstance(p, list) and len(p) in (2, 3) and all(isinstance(s, str) for s in p)
+        if not all(shaped(p) and (len(p) == 2 or p[2] in fits) for p in pairs):
+            raise ValueError("alternatives: each line is a JSON [input, form] or [input, form, \"full\"|\"partial\"]")
         if len({pair[0] for pair in pairs}) != len(pairs):
             raise ValueError("alternatives: an input has more than one alternative")
         answers = ours.answers([pair[1] for pair in pairs])
-        for (text, form), answer in zip(pairs, answers, strict=True):
-            rows.append({"name": "alternative", "tags": {"input": text, "form": form}, "verdict": "ok" if answer["ok"] else "err"})
+        for pair, answer in zip(pairs, answers, strict=True):
+            tags = {"input": pair[0], "form": pair[1], **({"fit": pair[2]} if len(pair) == 3 else {})}
+            rows.append({"name": "alternative", "tags": tags, "verdict": "ok" if answer["ok"] else "err"})
 print(json.dumps({"rows": rows}, ensure_ascii=False))
