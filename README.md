@@ -68,11 +68,12 @@ CI writes them before each run. Write them the same way before running `bencher 
 ```sh
 python3 socat/resolve ci/socat > ci/socat/resolved.json
 python3 transport/resolve ci/transport > ci/transport/resolved.json
-``` With no file (an empty `resolved.json`), a run that
-caches nothing (`cache = "base"`, or bencher before 0.3.0) resolves at provisioning time instead.
-Priming a provisioned image fails, since it would cache whatever is latest that day under a key
-that never moves. bencher 0.3.0 is not supported: it runs `resolve` itself, in the guest, without
-the bench directory.
+```
+
+With no file (an empty `resolved.json`), a run that caches nothing (`cache = "base"`, or bencher
+before 0.3.0) resolves at provisioning time instead. Priming a provisioned image fails, since it
+would cache whatever is latest that day under a key that never moves. bencher 0.3.0 is not
+supported: it runs `resolve` itself, in the guest, without the bench directory.
 
 Since a provisioned image is exported, cached and imported on every run, a runner removes what
 it downloaded only to build (its build trees, the Go and Rust toolchains, apt's downloaded

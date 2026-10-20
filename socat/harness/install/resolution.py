@@ -65,7 +65,7 @@ class Resolution:
             if pick["mode"] != "pinned" or pick["version"] != pin:
                 raise ValueError(
                     f"params.pins.{name} is {pin!r}, but resolved.json's {name} is {pick!r}: "
-                    "regenerate resolved.json with the runner's resolve"
+                    "pin it in bench.toml (resolve doesn't see a --set) and regenerate resolved.json"
                 )
 
     def install(self) -> None:
