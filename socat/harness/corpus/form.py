@@ -17,6 +17,7 @@ samples = {
     "/q": {"mqname"},
     "24": {"bits"},
 }
+raw = {"remote-address", "local-address"}  # a generic SOCKET address is bytes in dalan, not a host
 values = {
     "x": {"STRING", "STRING-NULL", "GENERIC", "BIN", "IP4NAME"},
     "127.0.0.1": {"IP4SOCK", "STRUCT-IP_MREQN", "IP-MREQ-SOURCE"},
@@ -25,7 +26,9 @@ values = {
 
 class Form:
     @staticmethod
-    def sample(kind: str) -> str:
+    def sample(kind: str, generic: bool = False) -> str:
+        if generic and kind in raw:
+            return "x7f000001"
         return next((value for value, kinds in samples.items() if kind in kinds), "x")
 
     @classmethod
@@ -39,7 +42,8 @@ class Form:
                 depth -= 1
             elif depth == 0:
                 plain.append(c)
-        return re.sub(r"<([^>]*)>?", lambda m: cls.sample(m.group(1)), "".join(plain))
+        generic = "<domain>" in signature
+        return re.sub(r"<([^>]*)>?", lambda m: cls.sample(m.group(1), generic), "".join(plain))
 
     @staticmethod
     def value(kind: str) -> str | None:
