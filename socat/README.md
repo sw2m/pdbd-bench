@@ -28,7 +28,7 @@ once, under the first source that produced it.
 
 | Source | Entries |
 | --- | --- |
-| socat `-hhh` | every address type and alias as a minimal form (`<host>` → `127.0.0.1`, `<port>` → `1`, `<filename>` → `f`, …); every option and alias, with a sample value by its `type=`, riding on the most preferred type whose `groups=` fit (`harness/corpus/source/help/help.py` ranks types pdbd's dialect parses first, so the option, not its host, decides the verdict); `fork`/`max-children` ride a LISTEN |
+| socat `-hhh` | every address type and alias as a minimal form (`<host>` → `127.0.0.1`, `<port>` → `1`, `<filename>` → `f`, …; a generic `SOCKET-*` address, which socat reads as dalan bytes, → `x7f000001`); every option and alias, with a sample value by its `type=`, riding on the most preferred type whose `groups=` fit (`harness/corpus/source/help/help.py` ranks types pdbd's dialect parses first, so the option, not its host, decides the verdict); `fork`/`max-children` ride a LISTEN |
 | oittaa/socat `-hhh` | its type list (aliases take their target's signature), and its options riding a host chosen by their help heading |
 | oittaa/socat's tests | every string literal passed to `ParseChannel`/`ParseSpec` in `internal/parse/*_test.go`, found by `oittaa/main.go`'s `go/ast` walk |
 | websocat `--help=full` and its `doc.md` | every address type and overlay, using a doc example where there is one; every doc alias; every doc example specifier |
