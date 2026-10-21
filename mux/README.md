@@ -111,6 +111,7 @@ samples a reporter at an interval, so it can miss or part-count a sub-second sce
 | `yamux` | libp2p/rust-yamux | Rust |
 | `async-smux` | `async_smux` | Rust |
 | `h2` | `h2` | Rust |
+| `qmux` | `qmux` (moq-dev), QMux draft-02 over TCP | Rust |
 | `hashicorp-yamux` | hashicorp/yamux | Go |
 | `go-yamux` | libp2p/go-yamux | Go |
 | `smux` | xtaci/smux, v2 | Go |
@@ -118,16 +119,23 @@ samples a reporter at an interval, so it can miss or part-count a sub-second sce
 | `mplex` | libp2p/go-mplex | Go |
 | `nerdbank` | Nerdbank.Streams `MultiplexingStream`, protocol v3 | C# |
 | `nghttp2-core`, `nghttp2-loopback` | nghttp2, through `nghttp2_session_mem_recv2`/`mem_send2` | C |
+| `dwnx-core`, `dwnx-loopback` | ngtcp2/dwnx, QMux draft-02, through `dwnx_conn_read`/`writev_stream` | C |
 | `libp2p-yamux` | `@libp2p/yamux` | Node |
 | `netty-http2` | netty `Http2FrameCodec` + `Http2MultiplexHandler` | JVM |
 
-A library raced more than one way is one comparator with several impls (`modes`): nghttp2, like
-ours, races sans-IO core to core as well as over loopback, which is the only fair company for
-ours' `core`. `mplex` has no per-flow flow control: it races `flows` and `isolation` only, as the
+A library raced more than one way is one comparator with several impls (`modes`): nghttp2 and
+dwnx, like ours, race sans-IO core to core as well as over loopback, which is the only fair
+company for ours' `core`. The two C harnesses share one driver (`peers/c/peer.c`), so they run
+identical scenarios through each library's own hooks. `mplex` has no per-flow flow control: it races `flows` and `isolation` only, as the
 control that shows what a missing window costs, not as a competitor.
 
 An HTTP/2 flow is one POST: the request body carries near → far, the response body far → near.
-Opening one sends headers, which `churn` pays for; the report says so.
+Opening one sends headers, which `churn` pays for; the report says so. A QMux flow is one
+bidirectional QUIC stream: it opens with its first STREAM frame, no headers.
+
+QMux (`draft-ietf-quic-qmux`) runs QUIC's streams and flow control over a reliable byte stream.
+Both implementations are months old and the draft is still moving, so their rows say less about a
+settled protocol than nghttp2's.
 
 Not compared, since they aren't a mux over a given byte stream: quinn and quic-go (QUIC owns its
 UDP transport), russh (SSH adds mandatory crypto) and muxado. pdbd's `crates/mux/CLAUDE.md` cites
@@ -139,17 +147,22 @@ them for design.
   window (go-yamux, `@libp2p/yamux`) have their maximum set to it too, so no impl grows past the
   shared window. rust-yamux auto-tunes with no per-stream maximum, bounded only by its connection
   receive window below; async_smux has no byte window to set.
-- **Wire connection window** (HTTP/2): raised to 1 GiB, so it never binds. Every mux is compared
+- **Wire connection window** (HTTP/2, and QMux's `initial_max_data`): raised to 1 GiB, so it
+  never binds. Every mux is compared
   on its per-flow mechanics, which is all ours has (sw2m/pdbd#58: no wire connection window).
 - **Local receive bound**: `budget` (64 MiB) for ours and for the impls with one (smux's
   `MaxReceiveBuffer`, rust-yamux's connection receive window, which it insists be at least
   256 KiB a stream and so is raised to that where `budget` falls short).
 - **Flow cap**: above the largest scenario's flow count, so a cap never binds.
-- **Keepalives off**, so no ping is counted as traffic.
+- **Keepalives off**, so no ping is counted as traffic. For QMux that's an idle timeout of 0,
+  which also stops its keep-alive ping, and `qmux`'s RTT ping (`rtt_interval`) off.
+- **Credit returns on consumption**: nghttp2 (no automatic WINDOW_UPDATE) and dwnx extend a
+  flow's window only as the harness consumes, like ours' `consume`, so a stalled reader really
+  holds its credit.
 - **One allocator for native code**: glibc's malloc for every native harness (Rust, C, and ours,
   which the consumer links statically against glibc rather than musl). Runtimes with their own
   allocator (Go, .NET, Node, the JVM) keep it.
-- **Everything else** is the library's default.
+- **Everything else** is the library's default, QMux's 16 KiB record size included.
 
 Where a setting can't be made equal, the report reads with it in mind:
 
@@ -208,7 +221,8 @@ ours. Each harness drives its library the way the library is meant to be driven:
 The Salt state installs `build-essential` and calls `build`, which reads the consumer's
 `resolved.json` (see the repo's README, "Runners"): each comparator's version and mode, and each
 managed toolchain's version. `resolve` prints one: the bench's `params.pins`, else each
-comparator's latest release, and each toolchain's latest:
+comparator's latest release (for dwnx, which has none yet, the latest commit on its default
+branch), and each toolchain's latest:
 
 | Runtime | Toolchain (latest) | Comparator versions from | Built as |
 | --- | --- | --- | --- |
@@ -217,11 +231,12 @@ comparator's latest release, and each toolchain's latest:
 | .NET | the newest `active` .NET channel's SDK | NuGet (newest stable) | self-contained `linux-x64` publish |
 | Node | the newest LTS | the npm registry | `npm install --save-exact`, behind a launcher that runs `node --expose-gc` |
 | JVM | Adoptium's newest LTS JDK | Maven Central metadata (netty 4.x `.Final`, never 5.0's alphas) | `javac` against netty's jars, behind a launcher |
-| C | Debian's own `cc` (not floating) | the project's GitHub releases | nghttp2 built static from its release tarball, the harness linked against it |
+| C | Debian's own `cc` (not floating) | nghttp2's GitHub releases; dwnx's default branch | one `peer` binary linked against both: nghttp2 built static from its release tarball, dwnx's `lib/` compiled straight from the commit's tarball (no autotools: the `HAVE_*` its configure would detect on Debian are passed in, and `version.h` carries the commit) |
 
 Every download is checked before it's used: Go and Node tarballs against their sha256 lists,
 the Rust installer against its `.sha256`, the .NET SDK against the release metadata's sha512, the
-JDK against Adoptium's sha256, nghttp2 against its release's `checksums.txt`, and netty's jars
+JDK against Adoptium's sha256, nghttp2 against its release's `checksums.txt`, dwnx's `lib/` against
+the git tree hash GitHub reports for the commit, and netty's jars
 against Maven Central's `.sha1` (what Maven itself checks). The JVM harness needs no Maven: netty
 is one group at one version, so `build` walks its POMs for every compile-scope `io.netty`
 dependency and fetches exactly those.
@@ -229,7 +244,7 @@ dependency and fetches exactly those.
 After building, `build` runs every harness's `version <impl>` and fails unless it reports the
 resolved version: one Go module's requirement can raise another's (MVS takes the highest), and
 this catches it. Then it prunes what was only needed to build (the Go, Rust and .NET toolchains,
-npm, the JDK's `jmods` and sources, nghttp2's install tree), keeping only what runs: the
+npm, the JDK's `jmods` and sources, nghttp2's and dwnx's install trees), keeping only what runs: the
 binaries, Node, and the JDK.
 
 What floats inside a cached image, unrecorded: `@libp2p/yamux`'s helpers (`@libp2p/utils`,

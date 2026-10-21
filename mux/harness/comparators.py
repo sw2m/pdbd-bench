@@ -17,6 +17,7 @@ class Comparator:
     package: str
     scenarios: tuple[str, ...] = streams
     modes: tuple[str, ...] = ()  # see README.md "Comparators"
+    track: str = "release"  # see README.md "Build"
 
     @property
     def impls(self) -> tuple[str, ...]:
@@ -32,6 +33,9 @@ class Comparator:
         if self.runtime == "dotnet":
             found = json.loads(Remote.read(f"https://api.nuget.org/v3-flatcontainer/{self.package.lower()}/index.json"))
             return str([v for v in found["versions"] if "-" not in v][-1])
+        if self.runtime == "c" and self.track == "commit":
+            found = json.loads(Remote.read(f"https://api.github.com/repos/{self.package}/commits/HEAD"))
+            return str(found["sha"])
         if self.runtime == "c":
             found = json.loads(Remote.read(f"https://api.github.com/repos/{self.package}/releases/latest"))
             return str(found["tag_name"]).removeprefix("v")
@@ -56,9 +60,11 @@ comparators = (
     Comparator("yamux", "rust", "yamux"),
     Comparator("async-smux", "rust", "async_smux"),
     Comparator("h2", "rust", "h2"),
+    Comparator("qmux", "rust", "qmux"),
     Comparator("nerdbank", "dotnet", "Nerdbank.Streams"),
     Comparator("libp2p-yamux", "node", "@libp2p/yamux"),
     Comparator("nghttp2", "c", "nghttp2/nghttp2", modes=("nghttp2-core", "nghttp2-loopback")),
+    Comparator("dwnx", "c", "ngtcp2/dwnx", modes=("dwnx-core", "dwnx-loopback"), track="commit"),
     Comparator("netty-http2", "jvm", "io.netty:netty-codec-http2"),
 )
 named = {c.name: c for c in comparators}

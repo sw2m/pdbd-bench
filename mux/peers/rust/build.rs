@@ -4,7 +4,7 @@ use std::fs;
 fn main() {
     println!("cargo:rerun-if-changed=Cargo.lock");
     let lock = fs::read_to_string("Cargo.lock").unwrap_or_default();
-    for name in ["yamux", "async_smux", "h2"] {
+    for name in ["yamux", "async_smux", "h2", "qmux"] {
         let version = lock
             .split("[[package]]")
             .find(|p| p.lines().any(|l| l.trim() == format!("name = \"{name}\"")))

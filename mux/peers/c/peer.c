@@ -1,13 +1,13 @@
 // see mux/README.md "Comparators"
 #define _GNU_SOURCE
+#include "peer.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <malloc.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <nghttp2/nghttp2.h>
 #include <stdarg.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,54 +16,28 @@
 #include <time.h>
 #include <unistd.h>
 
-#define CONNECTION (1 << 30) // see mux/README.md "Fairness"
+struct params P;
+uint8_t *DATA;
 
-struct params {
-  long window, chunk, bulk, flows, message, pings, warm, load, churn, idle;
-  double timeout;
-};
-
-struct end {
-  long pending, rx;
-  int eof;
-};
-
-struct flow {
-  int32_t id;
-  struct end near, far;
-  int stall, echo, close, accepted, closed;
-  double opened, arrived, done;
-  long want;
-};
-
-enum { NEAR, FAR };
-
-struct side {
-  int which;
-  nghttp2_session *s;
-  int fd;
-  const uint8_t *pend;
-  size_t plen;
-};
-
-static struct params P;
+static const struct lib *LIB;
 static int CORE;
-static struct side SIDES[2];
+static int FDS[2];
+static const uint8_t *PEND[2];
+static size_t PLEN[2];
 static struct flow **FLOWS;
 static size_t NFLOWS;
-static uint8_t *DATA;
 
-static void fail(const char *format, ...) {
+void fail(const char *format, ...) {
   va_list args;
   va_start(args, format);
-  fprintf(stderr, "peer: nghttp2: ");
+  fprintf(stderr, "peer: %s: ", LIB ? LIB->name : "c");
   vfprintf(stderr, format, args);
   fprintf(stderr, "\n");
   va_end(args);
   exit(2);
 }
 
-static double now(void) {
+double now(void) {
   struct timespec t;
   clock_gettime(CLOCK_MONOTONIC, &t);
   return t.tv_sec + t.tv_nsec / 1e9;
@@ -91,13 +65,24 @@ static double status(const char *field) {
   return out;
 }
 
-static struct flow *find(int32_t id) {
-  size_t i = (size_t)(id - 1) / 2;
-  return id > 0 && (id & 1) && i < NFLOWS ? FLOWS[i] : NULL;
+long limit(void) {
+  long n = P.flows;
+  if (P.load + 1 > n) n = P.load + 1;
+  if (P.idle > n) n = P.idle;
+  if (P.churn > n) n = P.churn;
+  return n + 1;
 }
 
-static struct flow *track(int32_t id) {
-  size_t i = (size_t)(id - 1) / 2;
+struct end *end(int side, struct flow *f) { return side == NEAR ? &f->near : &f->far; }
+
+struct flow *find(int64_t id) {
+  size_t i = LIB->slot(id);
+  return i < NFLOWS ? FLOWS[i] : NULL;
+}
+
+static struct flow *track(int64_t id) {
+  size_t i = LIB->slot(id);
+  if (i == SIZE_MAX) fail("stream %lld is not ours", (long long)id);
   if (i >= NFLOWS) {
     size_t grown = NFLOWS ? NFLOWS * 2 : 1024;
     while (grown <= i) grown *= 2;
@@ -110,103 +95,40 @@ static struct flow *track(int32_t id) {
   return FLOWS[i];
 }
 
-static nghttp2_ssize source(nghttp2_session *s, int32_t id, uint8_t *buf, size_t length, uint32_t *flags,
-                            nghttp2_data_source *src, void *user) {
-  (void)s, (void)src;
-  struct flow *f = find(id);
-  int side = ((struct side *)user)->which;
-  struct end *e = side == NEAR ? &f->near : &f->far;
-  long *pending = &e->pending;
-  int eof = e->eof;
-  if (*pending == 0) {
-    if (eof) {
-      *flags |= NGHTTP2_DATA_FLAG_EOF;
-      return 0;
-    }
-    return NGHTTP2_ERR_DEFERRED;
-  }
-  size_t n = length;
-  if ((long)n > *pending) n = (size_t)*pending;
-  if ((long)n > P.chunk) n = (size_t)P.chunk;
-  memcpy(buf, DATA, n);
-  *pending -= (long)n;
-  if (*pending == 0 && eof) *flags |= NGHTTP2_DATA_FLAG_EOF;
-  return (nghttp2_ssize)n;
+size_t take(int side, struct flow *f, size_t max, int *fin) {
+  struct end *e = end(side, f);
+  size_t n = max;
+  if (n > (size_t)e->pending) n = (size_t)e->pending;
+  if (n > (size_t)P.chunk) n = (size_t)P.chunk;
+  *fin = e->eof && n == (size_t)e->pending;
+  return n;
 }
 
-static void more(int side, struct flow *f, long n) {
-  (side == NEAR ? &f->near : &f->far)->pending += n;
-  nghttp2_session_resume_data(SIDES[side].s, f->id);
-}
-
-static int on_chunk(nghttp2_session *s, uint8_t flags, int32_t id, const uint8_t *data, size_t len, void *user) {
-  (void)flags, (void)data;
-  struct flow *f = find(id);
-  int side = ((struct side *)user)->which;
-  if (!f) return 0;
-  if (side == FAR) {
-    f->far.rx += (long)len;
-    if (!f->stall) nghttp2_session_consume(s, id, len);
-    if (f->want && f->far.rx >= f->want && !f->done) f->done = now();
-    if (f->echo) {
-      if (f->close) f->far.eof = 1;
-      more(FAR, f, (long)len);
-    }
-  } else {
+int got(int side, struct flow *f, size_t len) {
+  if (side == NEAR) {
     f->near.rx += (long)len;
-    nghttp2_session_consume(s, id, len);
+    return 1;
   }
-  return 0;
+  f->far.rx += (long)len;
+  if (f->want && f->far.rx >= f->want && !f->done) f->done = now();
+  if (f->echo) {
+    if (f->close) f->far.eof = 1;
+    f->far.pending += (long)len;
+    LIB->resume(FAR, f);
+  }
+  return !f->stall;
 }
 
-static int on_frame(nghttp2_session *s, const nghttp2_frame *frame, void *user) {
-  if (((struct side *)user)->which != FAR || frame->hd.type != NGHTTP2_HEADERS ||
-      frame->headers.cat != NGHTTP2_HCAT_REQUEST)
-    return 0;
-  struct flow *f = find(frame->hd.stream_id);
-  if (!f) return 0;
+void arrive(struct flow *f) {
   f->accepted = 1;
   f->arrived = now();
-  nghttp2_nv status[] = {{(uint8_t *)":status", (uint8_t *)"200", 7, 3, NGHTTP2_NV_FLAG_NONE}};
-  nghttp2_data_provider2 provider = {.read_callback = source};
-  return nghttp2_submit_response2(s, frame->hd.stream_id, status, 1, &provider);
 }
 
-static int on_close(nghttp2_session *s, int32_t id, uint32_t code, void *user) {
-  (void)s, (void)code;
-  struct flow *f = find(id);
-  if (f && ((struct side *)user)->which == NEAR) f->closed = 1;
-  return 0;
-}
+void shut(struct flow *f) { f->closed = 1; }
 
-static nghttp2_session *session(int which) {
-  nghttp2_session_callbacks *cb;
-  nghttp2_session_callbacks_new(&cb);
-  nghttp2_session_callbacks_set_on_data_chunk_recv_callback(cb, on_chunk);
-  nghttp2_session_callbacks_set_on_frame_recv_callback(cb, on_frame);
-  nghttp2_session_callbacks_set_on_stream_close_callback(cb, on_close);
-  nghttp2_option *opt;
-  nghttp2_option_new(&opt);
-  nghttp2_option_set_no_auto_window_update(opt, 1);  // see mux/README.md "Fairness"
-  nghttp2_option_set_no_closed_streams(opt, 1);
-  nghttp2_session *s;
-  SIDES[which].which = which;
-  int rv = which == NEAR ? nghttp2_session_client_new2(&s, cb, &SIDES[which], opt)
-                         : nghttp2_session_server_new2(&s, cb, &SIDES[which], opt);
-  if (rv) fail("session: %s", nghttp2_strerror(rv));
-  nghttp2_option_del(opt);
-  nghttp2_session_callbacks_del(cb);
-  long limit = P.flows;
-  if (P.load + 1 > limit) limit = P.load + 1;
-  if (P.idle > limit) limit = P.idle;
-  if (P.churn > limit) limit = P.churn;
-  nghttp2_settings_entry settings[] = {
-      {NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE, (uint32_t)P.window},
-      {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, (uint32_t)limit + 1},  // see mux/README.md "Fairness"
-  };
-  nghttp2_submit_settings(s, NGHTTP2_FLAG_NONE, settings, 2);
-  nghttp2_session_set_local_window_size(s, NGHTTP2_FLAG_NONE, 0, CONNECTION);
-  return s;
+static void more(int side, struct flow *f, long n) {
+  end(side, f)->pending += n;
+  LIB->resume(side, f);
 }
 
 static void loopback(int fds[2]) {
@@ -231,78 +153,38 @@ static int pump(void) {
   if (CORE) {
     for (int i = 0; i < 2; i++) {
       const uint8_t *d;
-      nghttp2_ssize n;
-      while ((n = nghttp2_session_mem_send2(SIDES[i].s, &d)) > 0) {
-        nghttp2_ssize r = nghttp2_session_mem_recv2(SIDES[1 - i].s, d, (size_t)n);
-        if (r < 0) fail("mem_recv2: %s", nghttp2_strerror((int)r));
+      ssize_t n;
+      while ((n = LIB->send(i, &d)) > 0) {
+        LIB->recv(1 - i, d, (size_t)n);
         moved = 1;
       }
-      if (n < 0) fail("mem_send2: %s", nghttp2_strerror((int)n));
     }
     return moved;
   }
   static uint8_t buf[1 << 16];
   for (int i = 0; i < 2; i++) {
-    struct side *sd = &SIDES[i];
     for (;;) {
-      if (!sd->plen) {
-        nghttp2_ssize n = nghttp2_session_mem_send2(sd->s, &sd->pend);
-        if (n < 0) fail("mem_send2: %s", nghttp2_strerror((int)n));
-        sd->plen = (size_t)n;
+      if (!PLEN[i]) {
+        ssize_t n = LIB->send(i, &PEND[i]);
+        PLEN[i] = (size_t)n;
         if (!n) break;
       }
-      ssize_t w = write(sd->fd, sd->pend, sd->plen);
+      ssize_t w = write(FDS[i], PEND[i], PLEN[i]);
       if (w < 0) {
         if (errno == EAGAIN) break;
         fail("write: %s", strerror(errno));
       }
-      sd->pend += w, sd->plen -= (size_t)w, moved = 1;
+      PEND[i] += w, PLEN[i] -= (size_t)w, moved = 1;
     }
-    ssize_t r = read(sd->fd, buf, sizeof buf);
+    ssize_t r = read(FDS[i], buf, sizeof buf);
     if (r > 0) {
-      nghttp2_ssize n = nghttp2_session_mem_recv2(sd->s, buf, (size_t)r);
-      if (n < 0) fail("mem_recv2: %s", nghttp2_strerror((int)n));
+      LIB->recv(i, buf, (size_t)r);
       moved = 1;
     } else if (r < 0 && errno != EAGAIN) {
       fail("read: %s", strerror(errno));
     }
   }
   return moved;
-}
-
-static void setup(void) {
-  for (size_t i = 0; i < NFLOWS; i++) free(FLOWS[i]);
-  free(FLOWS);
-  FLOWS = NULL, NFLOWS = 0;
-  memset(SIDES, 0, sizeof SIDES);
-  int fds[2] = {-1, -1};
-  if (!CORE) loopback(fds);
-  for (int i = 0; i < 2; i++) {
-    SIDES[i].fd = fds[i];
-    SIDES[i].s = session(i);
-  }
-}
-
-static void teardown(void) {
-  for (int i = 0; i < 2; i++) {
-    nghttp2_session_del(SIDES[i].s);
-    if (SIDES[i].fd >= 0) close(SIDES[i].fd);
-  }
-}
-
-static struct flow *open1(void) {
-  nghttp2_nv nv[] = {
-      {(uint8_t *)":method", (uint8_t *)"POST", 7, 4, NGHTTP2_NV_FLAG_NONE},
-      {(uint8_t *)":scheme", (uint8_t *)"http", 7, 4, NGHTTP2_NV_FLAG_NONE},
-      {(uint8_t *)":path", (uint8_t *)"/", 5, 1, NGHTTP2_NV_FLAG_NONE},
-      {(uint8_t *)":authority", (uint8_t *)"peer", 10, 4, NGHTTP2_NV_FLAG_NONE},
-  };
-  nghttp2_data_provider2 provider = {.read_callback = source};
-  int32_t id = nghttp2_submit_request2(SIDES[NEAR].s, NULL, nv, 4, &provider, NULL);
-  if (id < 0) fail("submit_request2: %s", nghttp2_strerror(id));
-  struct flow *f = track(id);
-  f->opened = now();
-  return f;
 }
 
 static int until(int (*done)(void *), void *arg) {
@@ -312,6 +194,35 @@ static int until(int (*done)(void *), void *arg) {
     if (now() > end) return 0;
   }
   return 1;
+}
+
+static int up(void *arg) {
+  (void)arg;
+  return LIB->up();
+}
+
+static void setup(void) {
+  for (size_t i = 0; i < NFLOWS; i++) free(FLOWS[i]);
+  free(FLOWS);
+  FLOWS = NULL, NFLOWS = 0;
+  FDS[NEAR] = FDS[FAR] = -1;
+  PLEN[NEAR] = PLEN[FAR] = 0;
+  if (!CORE) loopback(FDS);
+  for (int i = 0; i < 2; i++) LIB->start(i);
+  if (!until(up, NULL)) fail("the session never came up");
+}
+
+static void teardown(void) {
+  for (int i = 0; i < 2; i++) {
+    LIB->stop(i);
+    if (FDS[i] >= 0) close(FDS[i]);
+  }
+}
+
+static struct flow *open1(void) {
+  struct flow *f = track(LIB->open());
+  f->opened = now();
+  return f;
 }
 
 struct many {
@@ -339,7 +250,7 @@ static struct flow **opened(long n) {
   for (long i = 0; i < n; i++) {
     f[i] = open1();
     f[i]->echo = 1;
-    f[i]->near.pending = 1;
+    more(NEAR, f[i], 1);
   }
   struct many m = {f, n, 0};
   if (!until(primed, &m) || !until(echoed, &m)) fail("opening %ld flows missed the deadline", n);
@@ -479,7 +390,7 @@ static void churn(void) {
     struct back b = {f, 1};
     if (!until(returned, &b)) fail("an echo missed the deadline");
     f->near.eof = 1;
-    nghttp2_session_resume_data(SIDES[NEAR].s, f->id);
+    LIB->resume(NEAR, f);
     if (!until(closed, f)) fail("a close missed the deadline");
   }
   put("cycles/s", P.churn / (now() - start));
@@ -520,15 +431,27 @@ static long field(const char *json, const char *key, long otherwise) {
   return at ? atol(at + strlen(needle)) : otherwise;
 }
 
+static void pick(const char *impl) {
+  const struct lib *libs[] = {&NGHTTP2, &DWNX};
+  for (size_t i = 0; i < sizeof libs / sizeof *libs; i++) {
+    size_t n = strlen(libs[i]->name);
+    if (strncmp(impl, libs[i]->name, n) || impl[n] != '-') continue;
+    if (!strcmp(impl + n, "-core")) CORE = 1;
+    else if (strcmp(impl + n, "-loopback")) continue;
+    LIB = libs[i];
+    return;
+  }
+  fail("unknown impl %s", impl);
+}
+
 int main(int argc, char **argv) {
   if (argc == 3 && !strcmp(argv[1], "version")) {
-    if (strcmp(argv[2], "nghttp2-core") && strcmp(argv[2], "nghttp2-loopback")) fail("unknown impl %s", argv[2]);
-    puts(nghttp2_version(0)->version_str);
+    pick(argv[2]);
+    puts(LIB->version());
     return 0;
   }
-  if (argc != 4) fail("usage: peer <nghttp2-core|nghttp2-loopback> <scenario> <params json> | peer version <impl>");
-  if (!strcmp(argv[1], "nghttp2-core")) CORE = 1;
-  else if (strcmp(argv[1], "nghttp2-loopback")) fail("unknown impl %s", argv[1]);
+  if (argc != 4) fail("usage: peer <impl> <scenario> <params json> | peer version <impl>");
+  pick(argv[1]);
   const char *j = argv[3], *scenario = argv[2];
   P = (struct params){field(j, "window", 262144), field(j, "chunk", 65536), field(j, "bulk", 268435456),
                       field(j, "flows", 16), field(j, "message", 64), field(j, "pings", 10000),

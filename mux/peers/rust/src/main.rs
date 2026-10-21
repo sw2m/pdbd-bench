@@ -1,4 +1,5 @@
 mod h2;
+mod qmux;
 mod scenario;
 mod smux;
 mod yamux;
@@ -14,6 +15,7 @@ fn version(name: &str) -> Option<&'static str> {
         "yamux" => Some(env!("VERSION_YAMUX")),
         "async-smux" => Some(env!("VERSION_ASYNC_SMUX")),
         "h2" => Some(env!("VERSION_H2")),
+        "qmux" => Some(env!("VERSION_QMUX")),
         _ => None,
     }
 }
@@ -107,6 +109,7 @@ fn main() {
             "yamux" => run(yamux::session, scenario, p).await,
             "async-smux" => run(smux::session, scenario, p).await,
             "h2" => run(h2::session, scenario, p).await,
+            "qmux" => run(qmux::session, scenario, p).await,
             other => fail(format!("unknown impl {other:?}")),
         }
     });
