@@ -1,0 +1,11 @@
+{
+  "name": "peer",
+  "private": true,
+  "type": "module",
+  "description": "see mux/README.md \"Build\": the build installs @libp2p/yamux at the resolved version",
+  "dependencies": {
+    "@libp2p/logger": "*",
+    "@libp2p/utils": "*",
+    "@libp2p/yamux": "*"
+  }
+}

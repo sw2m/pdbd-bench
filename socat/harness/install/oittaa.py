@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from harness.install.oracle import Oracle
-from harness.install.toolchain import Go
+from kit.toolchain import Go
 
 module = "github.com/oittaa/socat"
 proxy = f"https://proxy.golang.org/{module}/@latest"  # see https://go.dev/ref/mod#goproxy-protocol

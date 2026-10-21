@@ -1,0 +1,20 @@
+cache = "provisioned" # see README "Runners": keyed on resolved.json, so an upstream release misses
+resolved = "resolved.json"
+
+[fixture]
+path = "../.."
+runner = "mux"
+
+[limits]
+cpu = 2 # a 4-vCPU GitHub runner: one for telemetry, one for the harnesses, two left to the host
+memory = "4GiB" # cargo builds the Rust harness while provisioning
+provision = "PT30M"
+run = 1800
+
+[params] # see mux/README.md "Params": every comparator raced end to end, at sizes too small to read
+repeat = 2
+bulk = 16777216
+pings = 1000
+churn = 200
+idle = 200
+timeout = 30

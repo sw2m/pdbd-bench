@@ -34,8 +34,14 @@ Each runner is one directory, laid out by bencher's runner contract
   run              the entrypoint: reads $BENCHER_IN, prints the result JSON
   resolve          a helper for the consumer: prints the resolved.json naming the exact versions the runner installs
   harness/         the entrypoint's Python package
-  <other scripts>  helpers its Salt state calls (transport/pppd builds its comparator; socat/oracles installs its oracles)
+  kit -> ../kit    a link to the toolchain installers runners share (socat, mux)
+  <other scripts>  helpers its Salt state calls (transport/pppd builds its comparator; socat/oracles installs its oracles; mux/build builds its harnesses)
 ```
+
+`kit/` holds what more than one runner needs: the verified downloads (`kit/remote.py`) and the
+toolchain installers (`kit/toolchain/`: Go, Rust, .NET, Node and the JDK). A runner reaches it
+through a `kit` symlink; bencher copies the runner with its links followed, as long as they stay
+inside this checkout.
 
 Runners here are written in Python 3 against the standard library only. bencher guarantees
 `python3` in every guest (sw2m/bencher#17), so a runner written this way moves to another OS
@@ -89,6 +95,7 @@ change shows after the fact, not as a miss.
 | --- | --- |
 | [`transport`](transport/README.md) | pdbd's userspace PPP (`linkup`) against kernel PPP (`pppd`) over one L1 |
 | [`socat`](socat/README.md) | pdbd's socat-style address dialect against the prior-art parsers (socat, websocat, oittaa/socat, tocat), as per-input verdicts |
+| [`mux`](mux/README.md) | pdbd's stream multiplexer against yamux, smux, HTTP/2, Nerdbank and mplex, in Rust, Go, C#, C, Node and the JVM |
 
 Each runner documents its own rows, params and artifacts beside its code.
 

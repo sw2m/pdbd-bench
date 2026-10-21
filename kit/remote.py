@@ -27,8 +27,8 @@ class Remote:
             return data
 
     @staticmethod
-    def fetch(url: str, path: Path) -> str:
-        digest = hashlib.sha256()
+    def fetch(url: str, path: Path, algorithm: str = "sha256") -> str:
+        digest = hashlib.new(algorithm)
         request = urllib.request.Request(url, headers=agent)
         with urllib.request.urlopen(request, timeout=600) as response, path.open("wb") as file:
             while chunk := response.read(1 << 20):
@@ -45,7 +45,8 @@ class Remote:
                 if not target.is_relative_to(root) or member.isdev():
                     raise RuntimeError(f"{tarball}: member {member.name!r} would land outside {root}")
                 if member.issym() or member.islnk():
-                    link = (target.parent / member.linkname).resolve() if member.issym() else (root / member.linkname).resolve()
+                    base = target.parent if member.issym() else root
+                    link = (base / member.linkname).resolve()
                     if not link.is_relative_to(root):
                         raise RuntimeError(f"{tarball}: link {member.name!r} points outside {root}")
             archive.extractall(into)
