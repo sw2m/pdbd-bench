@@ -148,8 +148,7 @@ them for design.
 - **Keepalives off**, so no ping is counted as traffic.
 - **One allocator for native code**: glibc's malloc for every native harness (Rust, C, and ours,
   which the consumer links statically against glibc rather than musl). Runtimes with their own
-  allocator (Go, .NET, Node, the JVM) keep it. musl's malloc made ours 14× slower on the same
-  code (786 against 10 148 MiB/s core to core), because the mux allocates per frame.
+  allocator (Go, .NET, Node, the JVM) keep it.
 - **Everything else** is the library's default.
 
 Where a setting can't be made equal, the report reads with it in mind:
@@ -157,7 +156,6 @@ Where a setting can't be made equal, the report reads with it in mind:
 - `x/net/http2`'s client stream window is a fixed 4 MiB, so its far → near direction isn't at
   `window`. Only `pingpong`, `loaded`, `churn` and `idle` send anything far → near, and only a
   few bytes per message.
-- Ours delivers each DATA frame as an owned `Vec`; the others hand out borrowed buffers.
 
 ### Known quirks
 
@@ -183,6 +181,11 @@ ours. Each harness drives its library the way the library is meant to be driven:
   (netty's default 64 KiB write-buffer high watermark) and cost it most of its throughput. The
   writer guards against re-entry, since a write can fire `channelWritabilityChanged` synchronously,
   and re-checks writability after flushing, so a wakeup the guard swallowed can't strand it.
+- **ours** reads straight into the mux's `spare()` and writes `transmit()`'s lent bytes straight to
+  the socket, staging only what a full socket refuses. `core` carries one end's `transmit()` into
+  the other's `spare()` the same way, taking the receiver's events when its buffer fills, as a
+  socket would. Feeding everything in before taking any events instead grew the receive buffer to
+  the whole in-flight window and cost `core` at 256 flows more than half its throughput.
 - **Node** yields one turn of the event loop after each successful write: without it, concurrent
   writers spin in microtasks and starve the sockets' I/O.
 
