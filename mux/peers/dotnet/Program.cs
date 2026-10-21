@@ -242,7 +242,10 @@ sealed class Bench(Session s, Params p)
             for (var i = 0; i < n; i++)
             {
                 (ins[i], _) = await s.Accept();
-                await ins[i].ReadExactlyAsync(new byte[1]);
+                var echo = new byte[1];
+                await ins[i].ReadExactlyAsync(echo);
+                await ins[i].WriteAsync(echo);
+                await ins[i].FlushAsync();
             }
             return ins;
         });
@@ -253,7 +256,12 @@ sealed class Bench(Session s, Params p)
             await outs[i].WriteAsync(this.data.AsMemory(0, 1));
             await outs[i].FlushAsync();
         }
-        return (outs, await accepting);
+        var accepted = await accepting;
+        foreach (var f in outs)
+        {
+            await f.ReadExactlyAsync(new byte[1]);
+        }
+        return (outs, accepted);
     }
 
     public async Task<Outcome> Bulk()
@@ -438,13 +446,6 @@ sealed class Bench(Session s, Params p)
     {
         var before = Native.Rss();
         var (outs, ins) = await this.Opened(p.Idle);
-        var one = new byte[1];
-        for (var i = 0; i < p.Idle; i++)
-        {
-            await ins[i].WriteAsync(this.data.AsMemory(0, 1));
-            await ins[i].FlushAsync();
-            await outs[i].ReadExactlyAsync(one);
-        }
         await Task.Delay(50); // see mux/README.md "Scenarios"
         var after = Native.Rss();
         GC.KeepAlive(outs);

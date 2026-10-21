@@ -219,12 +219,20 @@ func (b bench) drain(f Flow, want int) (time.Time, error) {
 	return time.Now(), nil
 }
 
+// see mux/README.md "Scenarios"
 func (b bench) opened(n int) ([]Flow, []Flow, error) {
 	ins := make(chan Flow, n)
 	failed := make(chan error, 1)
 	go func() {
+		echo := make([]byte, 1)
 		for i := 0; i < n; i++ {
 			f, err := b.Accept()
+			if err == nil {
+				_, err = io.ReadFull(f, echo)
+			}
+			if err == nil {
+				_, err = f.Write(echo)
+			}
 			if err != nil {
 				failed <- err
 				return
@@ -243,16 +251,18 @@ func (b bench) opened(n int) ([]Flow, []Flow, error) {
 		}
 		outs[i] = f
 	}
-	one := make([]byte, 1)
 	accepted := make([]Flow, n)
 	for i := range accepted {
 		select {
 		case f := <-ins:
-			if _, err := io.ReadFull(f, one); err != nil {
-				return nil, nil, err
-			}
 			accepted[i] = f
 		case err := <-failed:
+			return nil, nil, err
+		}
+	}
+	one := make([]byte, 1)
+	for _, f := range outs {
+		if _, err := io.ReadFull(f, one); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -552,15 +562,6 @@ func (b bench) idle() (Result, error) {
 	outs, ins, err := b.opened(b.p.Idle)
 	if err != nil {
 		return Result{}, err
-	}
-	one := make([]byte, 1)
-	for i, in := range ins {
-		if _, err := in.Write(one); err != nil {
-			return Result{}, err
-		}
-		if _, err := io.ReadFull(outs[i], one); err != nil {
-			return Result{}, err
-		}
 	}
 	time.Sleep(50 * time.Millisecond) // see mux/README.md "Scenarios"
 	after, err := rss()

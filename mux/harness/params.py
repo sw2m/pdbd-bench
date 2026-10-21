@@ -22,6 +22,7 @@ class Params:
     isolated: int = 16
     message: int = 64
     pings: int = 10_000
+    trips: int = 2000
     lead: int = 100
     busy: int = 4
     churn: int = 1000
@@ -55,8 +56,8 @@ class Params:
             raise ValueError(f"isolated is {self.isolated}: isolation needs a stalled flow and at least one other")
         if self.isolated not in self.flows:
             raise ValueError(f"isolated is {self.isolated}, not one of flows {self.flows}: its ratio has no baseline")
-        if self.pings < 1000:
-            raise ValueError(f"pings is {self.pings}: a p99.9 needs at least 1000 round trips")
+        if min(self.pings, self.trips) < 1000:
+            raise ValueError(f"pings is {self.pings} and trips {self.trips}: a p99.9 needs at least 1000 round trips")
         unknown = set(self.impls) - {*ours, *impls}
         if unknown:
             raise ValueError(f"impls names unknown impls: {sorted(unknown)}")

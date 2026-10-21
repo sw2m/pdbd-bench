@@ -30,6 +30,8 @@ class Variant:
         wire = params.wire()
         for key, value in self.tags:
             wire[key] = int(value)
+        if self.scenario == "loaded":
+            wire["pings"] = params.trips
         return wire
 
 

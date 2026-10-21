@@ -326,14 +326,24 @@ static int primed(void *arg) {
   return 1;
 }
 
+static int echoed(void *arg) {
+  struct many *m = arg;
+  for (long i = 0; i < m->n; i++)
+    if (m->f[i]->near.rx < 1) return 0;
+  return 1;
+}
+
+// see mux/README.md "Scenarios"
 static struct flow **opened(long n) {
   struct flow **f = calloc((size_t)n, sizeof *f);
   for (long i = 0; i < n; i++) {
     f[i] = open1();
+    f[i]->echo = 1;
     f[i]->near.pending = 1;
   }
   struct many m = {f, n, 0};
-  if (!until(primed, &m)) fail("opening %ld flows missed the deadline", n);
+  if (!until(primed, &m) || !until(echoed, &m)) fail("opening %ld flows missed the deadline", n);
+  for (long i = 0; i < n; i++) f[i]->echo = 0;
   return f;
 }
 
@@ -483,12 +493,7 @@ static double rss(void) {
 
 static void idle(void) {
   double before = rss();
-  struct flow **f = opened(P.idle);
-  for (long i = 0; i < P.idle; i++) {
-    more(FAR, f[i], 1);
-    struct back b = {f[i], 1};
-    if (!until(returned, &b)) fail("touching a flow missed the deadline");
-  }
+  opened(P.idle);
   put("B/flow", (rss() - before) / P.idle);
 }
 

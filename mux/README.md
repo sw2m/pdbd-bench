@@ -46,7 +46,8 @@ expectation addresses one as `samples.<unit>.<stat>`.
 | `flows` | `[16, 256]` | flow counts for `flows` |
 | `isolated` | `16` | flows in `isolation`; one of `flows`, the baseline it's read against |
 | `message` | `64` | B per `pingpong`/`loaded` message |
-| `pings` | `10000` | measured round trips; at least 1000, so a p99.9 has ten samples above it |
+| `pings` | `10000` | measured `pingpong` round trips; at least 1000, so a p99.9 has ten samples above it |
+| `trips` | `2000` | measured `loaded` round trips, also at least 1000: a mux with head-of-line blocking takes milliseconds a trip under load, and `pings` of them would outrun `timeout` |
 | `lead` | `100` | round trips before the measured ones |
 | `busy` | `4` | flows running bulk traffic during `loaded` |
 | `churn` | `1000` | open/close cycles |
@@ -67,6 +68,11 @@ every scenario including `udp`. Its `loopback` driver is a lower bound for pdbd'
 
 ## Scenarios
 
+Every flow is primed before any clock starts: the opener sends one byte, the acceptor echoes it,
+and the opener reads it back. A round trip, not one byte one way: a yamux stream stays unacknowledged
+until the accepting side sends on it, and yamux implementations stop opening at 256 unacknowledged
+streams (rust-yamux's `MAX_ACK_BACKLOG`), which a one-way byte never clears.
+
 - **`bulk`**: one flow carries `bulk` bytes one way.
 - **`flows`**: N flows are opened, accepted and primed, then each writes `bulk / N` concurrently.
   `jain` is Jain's fairness index over per-flow throughputs (a flow's bytes over its own finish
@@ -80,10 +86,10 @@ every scenario including `udp`. Its `loopback` driver is a lower bound for pdbd'
   which is a result, not a runner failure.
 - **`pingpong`**: `lead` then `pings` round trips of a `message`-byte message on one flow over an
   idle tunnel; percentiles of the measured ones.
-- **`loaded`**: the same, while `busy` other flows run bulk traffic.
+- **`loaded`**: `lead` then `trips` round trips, while `busy` other flows run bulk traffic.
 - **`churn`**: `churn` cycles of open, accept, one byte each way, and close both ways. `open`
   latency is from the open call to the far side's accept.
-- **`idle`**: `idle` flows opened, touched (one byte each way) and held. `B/flow` is the process's
+- **`idle`**: `idle` flows opened (priming touches each one both ways) and held. `B/flow` is the process's
   RSS growth over the same process before opening, divided by `idle`, after each runtime returns
   freed memory to the OS: Go `FreeOSMemory`, glibc `malloc_trim` (Rust, C), a compacting .NET
   collection, Node's `gc()` twice, and the JVM collecting under `-XX:+UseSerialGC` with heap free
@@ -140,6 +146,10 @@ them for design.
   256 KiB a stream and so is raised to that where `budget` falls short).
 - **Flow cap**: above the largest scenario's flow count, so a cap never binds.
 - **Keepalives off**, so no ping is counted as traffic.
+- **One allocator for native code**: glibc's malloc for every native harness (Rust, C, and ours,
+  which the consumer links statically against glibc rather than musl). Runtimes with their own
+  allocator (Go, .NET, Node, the JVM) keep it. musl's malloc made ours 14× slower on the same
+  code (786 against 10 148 MiB/s core to core), because the mux allocates per frame.
 - **Everything else** is the library's default.
 
 Where a setting can't be made equal, the report reads with it in mind:
@@ -163,9 +173,18 @@ Where a setting can't be made equal, the report reads with it in mind:
   request and response body buffers are the likely source.
 
 Runtimes keep their own concurrency: Go goroutines, tokio's multi-threaded runtime, .NET's thread
-pool, JVM virtual threads over netty's event loops, Node's single event loop, and a single-threaded
-pump for nghttp2 and ours. Node's harness yields one turn of the event loop after each successful
-write: without it, concurrent writers spin in microtasks and starve the sockets' I/O.
+pool, netty's event loops, Node's single event loop, and a single-threaded pump for nghttp2 and
+ours. Each harness drives its library the way the library is meant to be driven:
+
+- **netty** writes and drains on the stream's own event loop: a writer writes while the stream is
+  writable and resumes on `channelWritabilityChanged`, a reader counts in `channelRead`, and an echo
+  answers in `channelRead`. Only the measuring thread hands off to the event loop. Driving it from
+  a blocking thread per flow instead lockstepped every 64 KiB write with a cross-thread wakeup
+  (netty's default 64 KiB write-buffer high watermark) and cost it most of its throughput. The
+  writer guards against re-entry, since a write can fire `channelWritabilityChanged` synchronously,
+  and re-checks writability after flushing, so a wakeup the guard swallowed can't strand it.
+- **Node** yields one turn of the event loop after each successful write: without it, concurrent
+  writers spin in microtasks and starve the sockets' I/O.
 
 ## Statistics
 

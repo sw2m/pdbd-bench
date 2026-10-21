@@ -42,7 +42,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 // see mux/README.md "Comparators"
 public final class Peer {
@@ -70,13 +69,23 @@ public final class Peer {
     }
   }
 
+  // see mux/README.md "Fairness"
   static final class Flow extends ChannelInboundHandlerAdapter {
     final BlockingQueue<ByteBuf> inbound = new LinkedBlockingQueue<>();
-    final Object writable = new Object();
     volatile Channel channel;
     volatile boolean closed;
     ByteBuf held;
     long arrived;
+    boolean counting;
+    long counted;
+    long want;
+    CompletableFuture<Long> drained;
+    byte[] source;
+    long pending;
+    CompletableFuture<Void> filled;
+    boolean echo;
+    boolean close;
+    boolean pumping;
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
@@ -86,36 +95,94 @@ public final class Peer {
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
       if (msg instanceof Http2DataFrame data) {
-        if (data.content().isReadable()) inbound.add(data.content().retain());
+        if (counting) {
+          counted += data.content().readableBytes();
+          check();
+        } else if (echo && data.content().isReadable()) {
+          ctx.writeAndFlush(new DefaultHttp2DataFrame(data.content().retain(), close));
+        } else if (data.content().isReadable()) {
+          inbound.add(data.content().retain());
+        }
         data.release();
-      } else if (msg instanceof Http2HeadersFrame headers) {
-        if (headers.isEndStream()) inbound.add(Unpooled.EMPTY_BUFFER);
+      } else if (msg instanceof Http2HeadersFrame headers && headers.isEndStream()) {
+        inbound.add(Unpooled.EMPTY_BUFFER);
+      }
+    }
+
+    void check() {
+      if (drained != null && counted >= want) {
+        var done = drained;
+        drained = null;
+        done.complete(System.nanoTime());
       }
     }
 
     @Override
     public void channelWritabilityChanged(ChannelHandlerContext ctx) {
-      synchronized (writable) {
-        writable.notifyAll();
-      }
+      pump();
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
       closed = true;
       inbound.add(Unpooled.EMPTY_BUFFER);
-      synchronized (writable) {
-        writable.notifyAll();
+      var gone = new IllegalStateException("stream closed");
+      if (drained != null) drained.completeExceptionally(gone);
+      if (filled != null) filled.completeExceptionally(gone);
+    }
+
+    // drain counts want more bytes on the event loop, and completes with the time the last one arrived
+    CompletableFuture<Long> drain(long want) {
+      var done = new CompletableFuture<Long>();
+      channel.eventLoop().execute(() -> {
+        counting = true;
+        this.want = counted + want;
+        for (ByteBuf b; (b = inbound.poll()) != null; ) {
+          counted += b.readableBytes();
+          b.release();
+        }
+        drained = done;
+        check();
+      });
+      return done;
+    }
+
+    // fill writes want bytes on the event loop, as far as the stream stays writable, and resumes when it is again
+    CompletableFuture<Void> fill(byte[] data, long want) {
+      var done = new CompletableFuture<Void>();
+      channel.eventLoop().execute(() -> {
+        source = data;
+        pending = want;
+        filled = done;
+        pump();
+      });
+      return done;
+    }
+
+    // pump writes while the stream is writable; a write can fire channelWritabilityChanged, and with it pump, re-entrantly
+    void pump() {
+      if (filled == null || pumping) return;
+      pumping = true;
+      try {
+        while (pending > 0 && channel.isWritable()) {
+          while (pending > 0 && channel.isWritable()) {
+            int n = (int) Math.min(source.length, pending);
+            channel.write(new DefaultHttp2DataFrame(Unpooled.wrappedBuffer(source, 0, n)));
+            pending -= n;
+          }
+          channel.flush();
+        }
+      } finally {
+        pumping = false;
+      }
+      if (pending == 0 && filled != null) {
+        var done = filled;
+        filled = null;
+        done.complete(null);
       }
     }
 
-    void write(ByteBuf data) throws InterruptedException {
-      synchronized (writable) {
-        while (!channel.isWritable()) {
-          if (closed) throw new IllegalStateException("stream closed while writing");
-          writable.wait(100);
-        }
-      }
+    void send(ByteBuf data) {
       channel.writeAndFlush(new DefaultHttp2DataFrame(data));
     }
 
@@ -125,18 +192,6 @@ public final class Peer {
       if (!b.isReadable()) return null;
       held = b;
       return b;
-    }
-
-    long drain(long want) throws InterruptedException {
-      for (long got = 0; got < want; ) {
-        ByteBuf b = next();
-        if (b == null) throw new IllegalStateException("EOF after " + got + " of " + want + " bytes");
-        int n = (int) Math.min(b.readableBytes(), want - got);
-        b.skipBytes(n);
-        got += n;
-        if (!b.isReadable()) b.release();
-      }
-      return System.nanoTime();
     }
 
     byte[] read(int n) throws InterruptedException {
@@ -156,6 +211,7 @@ public final class Peer {
   static final class Session {
     final EventLoopGroup group = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
     final BlockingQueue<Flow> accepted = new LinkedBlockingQueue<>();
+    volatile boolean echoing;
     Channel near;
     Channel server;
 
@@ -168,6 +224,7 @@ public final class Peer {
         @Override
         protected void initChannel(Http2StreamChannel ch) {
           Flow f = new Flow();
+          f.echo = f.close = echoing;
           ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
             boolean answered;
 
@@ -247,13 +304,6 @@ public final class Peer {
     return bytes / (double) (1 << 20) / (nanos / 1e9);
   }
 
-  void fill(Flow f, long want) throws InterruptedException {
-    for (long sent = 0; sent < want; ) {
-      int n = (int) Math.min(data.length, want - sent);
-      f.write(Unpooled.wrappedBuffer(data, 0, n));
-      sent += n;
-    }
-  }
 
   Flow[][] opened(int n) throws Exception {
     var ins = CompletableFuture.supplyAsync(() -> {
@@ -261,7 +311,7 @@ public final class Peer {
         Flow[] out = new Flow[n];
         for (int i = 0; i < n; i++) {
           out[i] = s.accept();
-          out[i].read(1);
+          out[i].send(Unpooled.wrappedBuffer(out[i].read(1)));
         }
         return out;
       } catch (InterruptedException e) {
@@ -271,16 +321,18 @@ public final class Peer {
     Flow[] outs = new Flow[n];
     for (int i = 0; i < n; i++) {
       outs[i] = s.open();
-      outs[i].write(Unpooled.wrappedBuffer(data, 0, 1));
+      outs[i].send(Unpooled.wrappedBuffer(data, 0, 1));
     }
-    return new Flow[][] {outs, ins.get()};
+    Flow[] accepted = ins.get();
+    for (Flow out : outs) out.read(1);
+    return new Flow[][] {outs, accepted};
   }
 
   Outcome bulk() throws Exception {
     Flow[][] f = opened(1);
     long start = System.nanoTime();
-    var end = CompletableFuture.supplyAsync(() -> call(() -> f[1][0].drain(p.bulk())), Thread::startVirtualThread);
-    fill(f[0][0], p.bulk());
+    var end = f[1][0].drain(p.bulk());
+    f[0][0].fill(data, p.bulk());
     Outcome o = new Outcome();
     o.values.put("MiB/s", mib(p.bulk(), end.get() - start));
     return o;
@@ -313,12 +365,8 @@ public final class Peer {
     List<CompletableFuture<Long>> ends = new ArrayList<>();
     List<CompletableFuture<Void>> sends = new ArrayList<>();
     for (int i = 0; i < ins.length; i++) {
-      Flow in = ins[i], out = outs[i];
-      ends.add(CompletableFuture.supplyAsync(() -> call(() -> in.drain(share)), Thread::startVirtualThread));
-      sends.add(CompletableFuture.runAsync(() -> call(() -> {
-        fill(out, share);
-        return null;
-      }), Thread::startVirtualThread));
+      ends.add(ins[i].drain(share));
+      sends.add(outs[i].fill(data, share));
     }
     var all = CompletableFuture.allOf(CompletableFuture.allOf(ends.toArray(CompletableFuture[]::new)),
         CompletableFuture.allOf(sends.toArray(CompletableFuture[]::new)));
@@ -354,10 +402,7 @@ public final class Peer {
     long share = p.bulk() / n;
     Flow[][] f = opened(n);
     f[1][0].channel.config().setAutoRead(false);
-    if (stalled) background(() -> {
-      fill(f[0][0], share); // see mux/README.md "Scenarios"
-      return null;
-    });
+    if (stalled) f[0][0].fill(data, share); // see mux/README.md "Scenarios"
     long[] start = new long[1];
     long[] ends = spread(Arrays.copyOfRange(f[0], 1, n), Arrays.copyOfRange(f[1], 1, n), share, start);
     Outcome o = new Outcome();
@@ -381,27 +426,19 @@ public final class Peer {
 
   Outcome pingpong(int load) throws Exception {
     Flow[][] f = opened(1 + load);
-    AtomicBoolean stop = new AtomicBoolean();
     for (int i = 1; i <= load; i++) {
-      Flow out = f[0][i], in = f[1][i];
-      background(() -> in.drain(Long.MAX_VALUE));
-      background(() -> {
-        while (!stop.get()) out.write(Unpooled.wrappedBuffer(data));
-        return null;
-      });
+      f[1][i].drain(Long.MAX_VALUE);
+      f[0][i].fill(data, Long.MAX_VALUE);
     }
     Flow near = f[0][0], far = f[1][0];
-    background(() -> {
-      for (;;) far.write(Unpooled.wrappedBuffer(far.read(p.message())));
-    });
+    far.channel.eventLoop().submit(() -> far.echo = true).sync();
     double[] trips = new double[p.pings()];
     for (int i = 0; i < p.warm() + p.pings(); i++) {
       long start = System.nanoTime();
-      near.write(Unpooled.wrappedBuffer(data, 0, p.message()));
+      near.send(Unpooled.wrappedBuffer(data, 0, p.message()));
       near.read(p.message());
       if (i >= p.warm()) trips[i - p.warm()] = (System.nanoTime() - start) / 1e3;
     }
-    stop.set(true);
     Outcome o = new Outcome();
     o.values.putAll(percentiles(trips, ""));
     return o;
@@ -409,33 +446,19 @@ public final class Peer {
 
   Outcome churn() throws Exception {
     int n = p.churn();
-    BlockingQueue<Long> arrivals = new LinkedBlockingQueue<>();
-    Thread server = Thread.startVirtualThread(() -> call(() -> {
-      for (int i = 0; i < n; i++) {
-        Flow f = s.accept();
-        arrivals.add(f.arrived);
-        Thread.startVirtualThread(() -> call(() -> {
-          byte[] one = f.read(1);
-          f.write(Unpooled.wrappedBuffer(one));
-          f.channel.writeAndFlush(new DefaultHttp2DataFrame(Unpooled.EMPTY_BUFFER, true));
-          return null;
-        }));
-      }
-      return null;
-    }));
+    s.echoing = true; // see mux/README.md "Fairness"
     double[] waits = new double[n];
     long start = System.nanoTime();
     for (int i = 0; i < n; i++) {
       long opened = System.nanoTime();
       Flow f = s.open();
-      f.write(Unpooled.wrappedBuffer(data, 0, 1));
-      waits[i] = (arrivals.take() - opened) / 1e3;
+      f.send(Unpooled.wrappedBuffer(data, 0, 1));
+      waits[i] = (s.accept().arrived - opened) / 1e3;
       f.read(1);
       f.channel.writeAndFlush(new DefaultHttp2DataFrame(Unpooled.EMPTY_BUFFER, true)).sync();
       if (f.next() != null) throw new IllegalStateException("data after the echo");
     }
     long spent = System.nanoTime() - start;
-    server.join();
     Outcome o = new Outcome();
     o.values.put("cycles/s", n / (spent / 1e9));
     o.values.putAll(percentiles(waits, "open "));
@@ -445,10 +468,6 @@ public final class Peer {
   Outcome idle() throws Exception {
     double before = rss();
     Flow[][] f = opened(p.idle());
-    for (int i = 0; i < p.idle(); i++) {
-      f[1][i].write(Unpooled.wrappedBuffer(data, 0, 1));
-      f[0][i].read(1);
-    }
     Thread.sleep(50); // see mux/README.md "Scenarios"
     double after = rss();
     Outcome o = new Outcome();

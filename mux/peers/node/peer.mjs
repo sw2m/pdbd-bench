@@ -179,7 +179,7 @@ class Bench {
       const ins = []
       for (let i = 0; i < n; i++) {
         const { flow } = await this.s.accept()
-        await flow.read(1)
+        await flow.write(await flow.read(1))
         ins.push(flow)
       }
       return ins
@@ -190,7 +190,9 @@ class Bench {
       await flow.write(this.data.subarray(0, 1))
       outs.push(flow)
     }
-    return [outs, await accepting]
+    const accepted = await accepting
+    for (const flow of outs) await flow.read(1)
+    return [outs, accepted]
   }
 
   async bulk () {
@@ -302,10 +304,6 @@ class Bench {
   async idle () {
     const before = rss()
     const [outs, ins] = await this.opened(this.p.idle)
-    for (let i = 0; i < this.p.idle; i++) {
-      await ins[i].write(this.data.subarray(0, 1))
-      await outs[i].read(1)
-    }
     await new Promise(resolve => setTimeout(resolve, 50)) // see mux/README.md "Scenarios"
     const after = rss()
     this.held = [outs, ins]

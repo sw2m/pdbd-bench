@@ -144,6 +144,8 @@ impl<O: Opener, A: Acceptor> Bench<O, A> {
                 let mut f = accept.accept().await?;
                 let mut one = [0];
                 f.read_exact(&mut one).await?;
+                f.write_all(&one).await?;
+                f.flush().await?;
                 ins.push(f);
             }
             io::Result::Ok(ins)
@@ -159,7 +161,12 @@ impl<O: Opener, A: Acceptor> Bench<O, A> {
             io::Result::Ok(outs)
         };
         let (ins, outs) = tokio::join!(ins, outs);
-        Ok((outs?, ins?))
+        let (mut outs, ins) = (outs?, ins?);
+        for f in outs.iter_mut() {
+            let mut one = [0];
+            f.read_exact(&mut one).await?;
+        }
+        Ok((outs, ins))
     }
 
     pub async fn bulk(&mut self) -> io::Result<Outcome> {
@@ -339,13 +346,7 @@ impl<O: Opener, A: Acceptor> Bench<O, A> {
     pub async fn idle(&mut self) -> io::Result<Outcome> {
         let before = rss()?;
         let n = self.p.idle;
-        let (mut outs, mut ins) = self.opened(n).await?;
-        for (out, inbound) in outs.iter_mut().zip(ins.iter_mut()) {
-            let mut one = [0];
-            inbound.write_all(&[0x5a]).await?;
-            inbound.flush().await?;
-            out.read_exact(&mut one).await?;
-        }
+        let (outs, ins) = self.opened(n).await?;
         tokio::time::sleep(Duration::from_millis(50)).await; // see mux/README.md "Scenarios"
         let after = rss()?;
         drop((outs, ins));
