@@ -29,6 +29,7 @@ type Params struct {
 	Load    int     `json:"load"`
 	Churn   int     `json:"churn"`
 	Idle    int     `json:"idle"`
+	Limit   int     `json:"limit"`
 	Timeout float64 `json:"timeout"`
 }
 

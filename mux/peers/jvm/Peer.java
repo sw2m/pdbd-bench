@@ -48,11 +48,7 @@ public final class Peer {
   static final int CONNECTION = 1 << 30; // see mux/README.md "Fairness"
 
   record Params(long window, int chunk, long bulk, int flows, int message, int pings, int warm, int load, int churn,
-      int idle, double timeout) {
-    int limit() {
-      return Math.max(Math.max(flows, load + 1), Math.max(idle, churn)) + 1;
-    }
-  }
+      int idle, int limit, double timeout) {}
 
   static final class Outcome {
     final Map<String, Double> values = new LinkedHashMap<>();
@@ -338,28 +334,6 @@ public final class Peer {
     return o;
   }
 
-  interface Call<T> {
-    T run() throws Exception;
-  }
-
-  static <T> T call(Call<T> c) {
-    try {
-      return c.run();
-    } catch (Exception e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  static void background(Call<?> c) {
-    Thread.startVirtualThread(() -> {
-      try {
-        c.run();
-      } catch (Exception ignored) {
-        // see mux/README.md "Scenarios"
-      }
-    });
-  }
-
   long[] spread(Flow[] outs, Flow[] ins, long share, long[] start) throws Exception {
     start[0] = System.nanoTime();
     List<CompletableFuture<Long>> ends = new ArrayList<>();
@@ -544,14 +518,18 @@ public final class Peer {
     return o;
   }
 
-  static long field(String json, String key, long otherwise) {
+  static double number(String json, String key, double otherwise) {
     int at = json.indexOf("\"" + key + "\":");
     if (at < 0) return otherwise;
     int from = at + key.length() + 3;
     while (from < json.length() && json.charAt(from) == ' ') from++;
     int to = from;
-    while (to < json.length() && "-0123456789.".indexOf(json.charAt(to)) >= 0) to++;
-    return (long) Double.parseDouble(json.substring(from, to));
+    while (to < json.length() && "-0123456789.eE+".indexOf(json.charAt(to)) >= 0) to++;
+    return Double.parseDouble(json.substring(from, to));
+  }
+
+  static long field(String json, String key, long otherwise) {
+    return (long) number(json, key, otherwise);
   }
 
   public static void main(String[] args) throws Throwable {
@@ -567,7 +545,7 @@ public final class Peer {
     Params p = new Params(field(j, "window", 262144), (int) field(j, "chunk", 65536), field(j, "bulk", 268435456),
         (int) field(j, "flows", 16), (int) field(j, "message", 64), (int) field(j, "pings", 10000),
         (int) field(j, "warm", 100), (int) field(j, "load", 4), (int) field(j, "churn", 1000),
-        (int) field(j, "idle", 1000), field(j, "timeout", 60));
+        (int) field(j, "idle", 1000), (int) field(j, "limit", 1001), number(j, "timeout", 60));
     try {
       System.out.println(run(args[1], p).json());
       System.exit(0);

@@ -63,13 +63,19 @@ pub struct Open(Mutex<client::SendRequest<Bytes>>);
 
 pub struct Accept(mpsc::UnboundedReceiver<Flow>);
 
+fn post() -> http::Request<()> {
+    let mut request = http::Request::new(());
+    *request.method_mut() = http::Method::POST;
+    request
+}
+
 impl Opener for Open {
     type Flow = Flow;
 
     async fn open(&self) -> io::Result<Flow> {
         let ask = self.0.lock().await.clone();
         let mut ask = ask.ready().await.map_err(io::Error::other)?;
-        let (answer, send) = ask.send_request(http::Request::new(()), false).map_err(io::Error::other)?;
+        let (answer, send) = ask.send_request(post(), false).map_err(io::Error::other)?;
         let recv = answer.await.map_err(io::Error::other)?.into_body();
         Ok(Flow { send, recv, held: Bytes::new() })
     }
@@ -86,7 +92,7 @@ impl Acceptor for Accept {
 pub async fn session(p: Params) -> io::Result<(Open, Accept)> {
     let (near, far) = pair().await?;
     let (found, inbound) = mpsc::unbounded_channel();
-    let limit = p.limit() as u32; // see mux/README.md "Fairness"
+    let limit = p.limit as u32; // see mux/README.md "Fairness"
     tokio::spawn(async move {
         let Ok(mut conn) = server::Builder::new()
             .initial_window_size(p.window)

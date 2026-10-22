@@ -65,9 +65,9 @@ async fn drive(
 
 fn side(tcp: TcpStream, mode: Mode, p: &Params) -> (Open, Accept) {
     let mut cfg = Config::default();
-    cfg.set_max_num_streams(p.limit()); // see mux/README.md "Fairness"
+    cfg.set_max_num_streams(p.limit); // see mux/README.md "Fairness"
     // see mux/README.md "Fairness"
-    cfg.set_max_connection_receive_window(Some(p.budget.max(256 * 1024 * p.limit())));
+    cfg.set_max_connection_receive_window(Some(p.budget.max(256 * 1024 * p.limit)));
     let conn = Connection::new(tcp.compat(), cfg, mode);
     let (asks, rx) = mpsc::unbounded_channel();
     let (found, inbound) = mpsc::unbounded_channel();

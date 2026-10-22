@@ -41,18 +41,21 @@ func (f *outbound) Write(p []byte) (int, error) { return f.body.Write(p) }
 func (f *outbound) Close() error                { return f.body.Close() }
 
 var http2 = Mux{"golang.org/x/net", func(near, far net.Conn, p Params) (Session, error) {
-	found := make(chan io.ReadWriteCloser, limit(p))
+	found := make(chan io.ReadWriteCloser, p.Limit)
 	srv := &xhttp2.Server{
-		MaxConcurrentStreams:         uint32(limit(p)), // see mux/README.md "Fairness"
+		MaxConcurrentStreams:         uint32(p.Limit), // see mux/README.md "Fairness"
 		MaxUploadBufferPerStream:     int32(p.Window),
 		MaxUploadBufferPerConnection: 1 << 30, // see mux/README.md "Fairness"
 	}
 	go srv.ServeConn(far, &xhttp2.ServeConnOpts{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.(http.Flusher).Flush()
 		f := &inbound{r.Body, w, make(chan struct{})}
 		found <- f
-		<-f.done
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		select {
+		case <-f.done:
+		case <-r.Context().Done():
+		}
 	})})
 	cc, err := (&xhttp2.Transport{AllowHTTP: true}).NewClientConn(near)
 	if err != nil {

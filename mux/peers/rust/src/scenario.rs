@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 // see mux/README.md "Scenarios"
 #[derive(Deserialize, Clone, Copy, Default)]
@@ -24,13 +25,11 @@ pub struct Params {
     pub load: usize,
     pub churn: usize,
     pub idle: usize,
+    pub limit: usize,
     pub timeout: f64,
 }
 
 impl Params {
-    pub fn limit(&self) -> usize {
-        self.flows.max(self.load + 1).max(self.idle).max(self.churn) + 1
-    }
 
     fn deadline(&self) -> Duration {
         Duration::from_secs_f64(self.timeout)
@@ -197,18 +196,21 @@ impl<O: Opener, A: Acceptor> Bench<O, A> {
         }
         let all = async {
             let mut ends = Vec::with_capacity(readers.len());
-            for r in readers {
+            for r in &mut readers {
                 ends.push(r.await.map_err(io::Error::other)??.0);
             }
-            for w in writers {
+            for w in &mut writers {
                 w.await.map_err(io::Error::other)??;
             }
             io::Result::Ok(ends)
         };
-        match tokio::time::timeout(self.p.deadline(), all).await {
-            Ok(ends) => Ok(Some((start, ends?))),
-            Err(_) => Ok(None),
-        }
+        let done = tokio::time::timeout(self.p.deadline(), all).await;
+        let Ok(ends) = done else {
+            readers.iter().for_each(JoinHandle::abort);
+            writers.iter().for_each(JoinHandle::abort);
+            return Ok(None);
+        };
+        Ok(Some((start, ends?)))
     }
 
     pub async fn flows(&mut self) -> io::Result<Outcome> {

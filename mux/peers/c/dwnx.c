@@ -33,7 +33,7 @@ static void push(int side, struct flow *f) {
   if (e->queued) return;
   if (r->count == r->cap) {
     size_t cap = r->cap ? r->cap * 2 : 1024;
-    struct flow **at = malloc(cap * sizeof *at);
+    struct flow **at = alloc(cap * sizeof *at);
     for (size_t i = 0; i < r->count; i++) at[i] = r->at[(r->head + i) % r->cap];
     free(r->at);
     *r = (struct ring){at, 0, r->count, cap};
@@ -120,6 +120,7 @@ static void start(int side) {
   tp.initial_max_stream_data_bidi_remote = (uint64_t)P.window;
   tp.initial_max_data = CONNECTION;
   tp.initial_max_streams_bidi = (uint64_t)limit(); // see mux/README.md "Fairness"
+  tp.max_idle_timeout = 0;                         // see mux/README.md "Fairness"
   READY[side] = 0;
   RINGS[side] = (struct ring){0};
   int rv = side == NEAR ? dwnx_conn_client_new(&CONNS[side], &cb, &settings, &tp, NULL, &WHICH[side])

@@ -10,7 +10,7 @@ import (
 var hashicorp = Mux{"github.com/hashicorp/yamux", func(near, far net.Conn, p Params) (Session, error) {
 	cfg := yamux.DefaultConfig()
 	cfg.MaxStreamWindowSize = uint32(p.Window)
-	cfg.AcceptBacklog = limit(p) // see mux/README.md "Fairness"
+	cfg.AcceptBacklog = p.Limit // see mux/README.md "Fairness"
 	cfg.EnableKeepAlive = false
 	cfg.LogOutput = io.Discard
 	c, err := yamux.Client(near, cfg)

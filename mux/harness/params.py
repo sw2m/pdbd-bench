@@ -58,6 +58,14 @@ class Params:
             raise ValueError(f"isolated is {self.isolated}, not one of flows {self.flows}: its ratio has no baseline")
         if min(self.pings, self.trips) < 1000:
             raise ValueError(f"pings is {self.pings} and trips {self.trips}: a p99.9 needs at least 1000 round trips")
+        counts = {"chunk": self.chunk, "churn": self.churn, "idle": self.idle, "message": self.message}
+        for key, value in {**counts, "flows": min(self.flows, default=0)}.items():
+            if value < 1:
+                raise ValueError(f"{key} is {value}: it must be at least 1")
+        if self.message > self.chunk:
+            raise ValueError(f"message is {self.message}, more than chunk {self.chunk}: a message is one write")
+        if self.timeout <= 0:
+            raise ValueError(f"timeout is {self.timeout}: a deadline must be in the future")
         unknown = set(self.impls) - {*ours, *impls}
         if unknown:
             raise ValueError(f"impls names unknown impls: {sorted(unknown)}")

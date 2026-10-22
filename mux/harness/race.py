@@ -32,7 +32,18 @@ class Variant:
             wire[key] = int(value)
         if self.scenario == "loaded":
             wire["pings"] = params.trips
+        wire["limit"] = self.limit(params, wire)
         return wire
+
+    def limit(self, params: Params, wire: dict[str, int | float]) -> int:
+        streams = {
+            "flows": int(wire.get("flows", 0)),
+            "isolation": int(wire.get("flows", 0)),
+            "loaded": params.busy + 1,
+            "churn": params.churn,
+            "idle": params.idle,
+        }
+        return streams.get(self.scenario, 1) + 1  # see README.md "Fairness": one spare stream
 
 
 @dataclass

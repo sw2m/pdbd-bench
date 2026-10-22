@@ -65,12 +65,18 @@ static double status(const char *field) {
   return out;
 }
 
-long limit(void) {
-  long n = P.flows;
-  if (P.load + 1 > n) n = P.load + 1;
-  if (P.idle > n) n = P.idle;
-  if (P.churn > n) n = P.churn;
-  return n + 1;
+long limit(void) { return P.limit; }
+
+void *alloc(size_t n) {
+  void *at = calloc(1, n);
+  if (!at) fail("out of memory for %zu bytes", n);
+  return at;
+}
+
+void *grow(void *at, size_t n) {
+  void *to = realloc(at, n);
+  if (!to) fail("out of memory for %zu bytes", n);
+  return to;
 }
 
 struct end *end(int side, struct flow *f) { return side == NEAR ? &f->near : &f->far; }
@@ -86,11 +92,11 @@ static struct flow *track(int64_t id) {
   if (i >= NFLOWS) {
     size_t grown = NFLOWS ? NFLOWS * 2 : 1024;
     while (grown <= i) grown *= 2;
-    FLOWS = realloc(FLOWS, grown * sizeof *FLOWS);
+    FLOWS = grow(FLOWS, grown * sizeof *FLOWS);
     memset(FLOWS + NFLOWS, 0, (grown - NFLOWS) * sizeof *FLOWS);
     NFLOWS = grown;
   }
-  if (!FLOWS[i]) FLOWS[i] = calloc(1, sizeof(struct flow));
+  if (!FLOWS[i]) FLOWS[i] = alloc(sizeof(struct flow));
   FLOWS[i]->id = id;
   return FLOWS[i];
 }
@@ -246,7 +252,7 @@ static int echoed(void *arg) {
 
 // see mux/README.md "Scenarios"
 static struct flow **opened(long n) {
-  struct flow **f = calloc((size_t)n, sizeof *f);
+  struct flow **f = alloc((size_t)n * sizeof *f);
   for (long i = 0; i < n; i++) {
     f[i] = open1();
     f[i]->echo = 1;
@@ -304,7 +310,7 @@ static void flows(void) {
   }
   struct many m = {f, n, 1 + share};
   if (!until(received, &m)) fail("flows missed the deadline");
-  double *rates = calloc((size_t)n, sizeof *rates), sum = 0, squares = 0, last = start;
+  double *rates = alloc((size_t)n * sizeof *rates), sum = 0, squares = 0, last = start;
   for (long i = 0; i < n; i++) {
     rates[i] = mib(share, f[i]->done - start);
     sum += rates[i], squares += rates[i] * rates[i];
@@ -363,7 +369,7 @@ static void pingpong(long load) {
   struct flow **f = opened(1 + load);
   for (long i = 1; i <= load; i++) more(NEAR, f[i], 1L << 62);
   f[0]->echo = 1;
-  double *trips = calloc((size_t)P.pings, sizeof *trips);
+  double *trips = alloc((size_t)P.pings * sizeof *trips);
   for (long i = 0; i < P.warm + P.pings; i++) {
     double start = now();
     struct back b = {f[0], f[0]->near.rx + P.message};
@@ -378,7 +384,7 @@ static int arrived(void *arg) { return ((struct flow *)arg)->accepted; }
 static int closed(void *arg) { return ((struct flow *)arg)->closed; }
 
 static void churn(void) {
-  double *waits = calloc((size_t)P.churn, sizeof *waits);
+  double *waits = alloc((size_t)P.churn * sizeof *waits);
   double start = now();
   for (long i = 0; i < P.churn; i++) {
     struct flow *f = open1();
@@ -404,7 +410,7 @@ static double rss(void) {
 
 static void idle(void) {
   double before = rss();
-  opened(P.idle);
+  free(opened(P.idle));
   put("B/flow", (rss() - before) / P.idle);
 }
 
@@ -424,12 +430,14 @@ static void once(const char *scenario) {
   teardown();
 }
 
-static long field(const char *json, const char *key, long otherwise) {
+static double number(const char *json, const char *key, double otherwise) {
   char needle[64];
   snprintf(needle, sizeof needle, "\"%s\":", key);
   const char *at = strstr(json, needle);
-  return at ? atol(at + strlen(needle)) : otherwise;
+  return at ? strtod(at + strlen(needle), NULL) : otherwise;
 }
+
+static long field(const char *json, const char *key, long otherwise) { return (long)number(json, key, otherwise); }
 
 static void pick(const char *impl) {
   const struct lib *libs[] = {&NGHTTP2, &DWNX};
@@ -456,8 +464,8 @@ int main(int argc, char **argv) {
   P = (struct params){field(j, "window", 262144), field(j, "chunk", 65536), field(j, "bulk", 268435456),
                       field(j, "flows", 16), field(j, "message", 64), field(j, "pings", 10000),
                       field(j, "warm", 100), field(j, "load", 4), field(j, "churn", 1000),
-                      field(j, "idle", 1000), (double)field(j, "timeout", 60)};
-  DATA = malloc((size_t)P.chunk);
+                      field(j, "idle", 1000), field(j, "limit", 1001), number(j, "timeout", 60)};
+  DATA = alloc((size_t)P.chunk);
   memset(DATA, 0x5a, (size_t)P.chunk);
   // see mux/README.md "Statistics"
   if (!strcmp(scenario, "isolation")) once("calm");

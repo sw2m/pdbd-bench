@@ -26,7 +26,7 @@ impl Acceptor for Accept {
 
 pub async fn session(p: Params) -> io::Result<(Open, Accept)> {
     let (near, far) = pair().await?;
-    let queue = NonZeroUsize::new(p.limit()).unwrap(); // see mux/README.md "Fairness"
+    let queue = NonZeroUsize::new(p.budget / p.chunk).unwrap(); // see mux/README.md "Fairness"
     let (connector, _, worker) = MuxBuilder::client().with_max_rx_queue(queue).with_connection(near).build();
     tokio::spawn(worker);
     let (_, acceptor, worker) = MuxBuilder::server().with_max_rx_queue(queue).with_connection(far).build();

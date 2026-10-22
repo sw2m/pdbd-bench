@@ -9,7 +9,7 @@
 #define CONNECTION (1 << 30) // see mux/README.md "Fairness"
 
 struct params {
-  long window, chunk, bulk, flows, message, pings, warm, load, churn, idle;
+  long window, chunk, bulk, flows, message, pings, warm, load, churn, idle, limit;
   double timeout;
 };
 
@@ -48,6 +48,8 @@ extern const struct lib NGHTTP2, DWNX;
 void fail(const char *format, ...);
 double now(void);
 long limit(void);
+void *alloc(size_t n);
+void *grow(void *at, size_t n);
 struct end *end(int side, struct flow *f);
 struct flow *find(int64_t id);
 size_t take(int side, struct flow *f, size_t max, int *fin);

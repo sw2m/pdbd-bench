@@ -58,6 +58,15 @@ expectation addresses one as `samples.<unit>.<stat>`.
 | `scenarios` | every scenario | the scenarios to run |
 | `pins.<comparator>` | latest | a comparator's version; unset, the latest release races (comparators float) |
 
+`check` rejects counts below 1 (`chunk`, `churn`, `idle`, `message`, every `flows`), a `message`
+longer than a `chunk`, and a `timeout` that isn't positive, so a bad `bench.toml` fails cleanly
+instead of hanging or dividing by zero in a harness.
+
+Each harness gets the params above as JSON, plus `limit`: the streams its scenario opens on one
+session, plus one. That's the variant's flow count for `flows` and `isolation`, `busy + 1` for
+`loaded`, `churn` for `churn` (its flows open one after another), `idle` for `idle`, and 1
+otherwise. Every stream cap is set from it (see Fairness).
+
 | Artifact | |
 | --- | --- |
 | `muxbench` | pdbd's `crates/mux/examples/muxbench.rs`, built static: ours, as `core` (two `Multi`s fed into each other, no sockets) and `loopback` (a single-threaded busy-poll loop over the pair). Without it, only the comparators race |
@@ -150,12 +159,19 @@ them for design.
 - **Wire connection window** (HTTP/2, and QMux's `initial_max_data`): raised to 1 GiB, so it
   never binds. Every mux is compared
   on its per-flow mechanics, which is all ours has (sw2m/pdbd#58: no wire connection window).
-- **Local receive bound**: `budget` (64 MiB) for ours and for the impls with one (smux's
-  `MaxReceiveBuffer`, rust-yamux's connection receive window, which it insists be at least
-  256 KiB a stream and so is raised to that where `budget` falls short).
-- **Flow cap**: above the largest scenario's flow count, so a cap never binds.
+- **Local receive bound**: `budget` (64 MiB) for ours and for the impls with one:
+  - xtaci/smux's `MaxReceiveBuffer`;
+  - rust-yamux's connection receive window, which it insists be at least 256 KiB for each of its
+    `max_num_streams` (`limit`), so it's raised to that where `budget` falls short: only `idle`,
+    `churn` and `flows` at 256;
+  - async_smux's `max_rx_queue`, which counts frames (and streams waiting to be accepted), not
+    bytes: `budget / chunk`, a budget's worth of chunk-sized frames (1024, its own default).
+- **Flow cap**: `limit` (see Params), the streams the scenario opens plus one, so a cap never
+  binds and a receive bound tied to it (rust-yamux's) is sized for the scenario raced.
 - **Keepalives off**, so no ping is counted as traffic. For QMux that's an idle timeout of 0,
-  which also stops its keep-alive ping, and `qmux`'s RTT ping (`rtt_interval`) off.
+  which also stops its keep-alive ping, set explicitly for dwnx and `qmux` alike, and `qmux`'s
+  RTT ping (`rtt_interval`) off. async_smux sends keepalives only when
+  `keep_alive_interval` is set, and its builder leaves it unset (0.4.0).
 - **Credit returns on consumption**: nghttp2 (no automatic WINDOW_UPDATE) and dwnx extend a
   flow's window only as the harness consumes, like ours' `consume`, so a stalled reader really
   holds its credit.
@@ -232,6 +248,10 @@ branch), and each toolchain's latest:
 | Node | the newest LTS | the npm registry | `npm install --save-exact`, behind a launcher that runs `node --expose-gc` |
 | JVM | Adoptium's newest LTS JDK | Maven Central metadata (netty 4.x `.Final`, never 5.0's alphas) | `javac` against netty's jars, behind a launcher |
 | C | Debian's own `cc` (not floating) | nghttp2's GitHub releases; dwnx's default branch | one `peer` binary linked against both: nghttp2 built static from its release tarball, dwnx's `lib/` compiled straight from the commit's tarball (no autotools: the `HAVE_*` its configure would detect on Debian are passed in, and `version.h` carries the commit) |
+
+GitHub's API (the dwnx commit and tree, and each GitHub-released comparator's latest release)
+allows 60 unauthenticated requests an hour per address, which hosted runners share: `resolve` and
+`build` send `GITHUB_TOKEN` when it's set, and retry a 403, 429 or 5xx twice with backoff.
 
 Every download is checked before it's used: Go and Node tarballs against their sha256 lists,
 the Rust installer against its `.sha256`, the .NET SDK against the release metadata's sha512, the

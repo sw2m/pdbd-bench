@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import platform
 import subprocess
 import tarfile
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 agent = {"User-Agent": "pdbd-bench (https://github.com/sw2m/pdbd-bench)"}
+api = "https://api.github.com/"
+tries = 3  # GitHub's unauthenticated limit is 60 an hour per address, shared on hosted runners
 
 
 class Remote:
@@ -21,10 +26,28 @@ class Remote:
             return r.geturl()
 
     @staticmethod
-    def read(url: str) -> bytes:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=agent), timeout=60) as r:
+    def headers(url: str) -> dict[str, str]:
+        token = os.environ.get("GITHUB_TOKEN")
+        if token and url.startswith(api):
+            return {**agent, "Authorization": f"Bearer {token}"}
+        return agent
+
+    @staticmethod
+    def get(url: str) -> bytes:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=Remote.headers(url)), timeout=60) as r:
             data: bytes = r.read()
             return data
+
+    @staticmethod
+    def read(url: str) -> bytes:
+        for attempt in range(1, tries):
+            try:
+                return Remote.get(url)
+            except urllib.error.HTTPError as e:
+                if e.code not in (403, 429) and e.code < 500:
+                    raise
+                time.sleep(2**attempt)
+        return Remote.get(url)
 
     @staticmethod
     def fetch(url: str, path: Path, algorithm: str = "sha256") -> str:

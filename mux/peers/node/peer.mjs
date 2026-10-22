@@ -97,7 +97,7 @@ class Session {
     server.close()
     near.setNoDelay(true)
     far.setNoDelay(true)
-    const limit = Math.max(p.flows, p.load + 1, p.idle, p.churn) + 1 // see mux/README.md "Fairness"
+    const limit = p.limit // see mux/README.md "Fairness"
     const factory = yamux({
       maxInboundStreams: limit,
       maxOutboundStreams: limit,

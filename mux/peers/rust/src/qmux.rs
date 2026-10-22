@@ -127,7 +127,7 @@ impl Acceptor for Accept {
 
 fn config(p: &Params) -> Config {
     let mut c = Config::new(Version::QMux02);
-    c.max_streams_bidi = p.limit() as u64; // see mux/README.md "Fairness"
+    c.max_streams_bidi = p.limit as u64; // see mux/README.md "Fairness"
     c.max_data = CONNECTION;
     c.max_stream_data_bidi_local = p.window.into();
     c.max_stream_data_bidi_remote = p.window.into();
