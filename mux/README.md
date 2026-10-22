@@ -58,7 +58,7 @@ expectation addresses one as `samples.<unit>.<stat>`.
 | `scenarios` | every scenario | the scenarios to run |
 | `pins.<comparator>` | latest | a comparator's version; unset, the latest release races (comparators float) |
 
-`check` rejects counts below 1 (`chunk`, `churn`, `idle`, `message`, every `flows`), a `message`
+`check` rejects counts below 1 (`chunk`, `churn`, `idle`, `message`, every `flows` and `sizes`), a `message`
 longer than a `chunk`, and a `timeout` that isn't positive, so a bad `bench.toml` fails cleanly
 instead of hanging or dividing by zero in a harness.
 
