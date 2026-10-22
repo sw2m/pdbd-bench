@@ -55,15 +55,35 @@ jobs:
           path: ${{ steps.bench.outputs.report }}
           if-no-files-found: warn
 
+  mux:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: resolve ci/mux
+        run: python3 mux/resolve ci/mux > ci/mux/resolved.json # see README "Runners"
+      - id: bench
+        uses: sw2m/bencher@3b05cbb3eae4a29b5c608135b4a0c4fa4d2cc61f # v0.4.0
+        with:
+          bench: ci/mux
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: mux
+          path: ${{ steps.bench.outputs.report }}
+          if-no-files-found: warn
+
   # The one status to mark required; checks join it through `needs` as they land
   mergeable:
     needs:
       - transport
       - socat
+      - mux
     if: always()
     runs-on: ubuntu-latest
     steps:
       - run: |
-          echo "transport=${{ needs.transport.result }} socat=${{ needs.socat.result }}"
+          echo "transport=${{ needs.transport.result }} socat=${{ needs.socat.result }} mux=${{ needs.mux.result }}"
           [ "${{ needs.transport.result }}" = success ]
           [ "${{ needs.socat.result }}" = success ]
+          [ "${{ needs.mux.result }}" = success ]

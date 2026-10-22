@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 from harness.install.oracle import Oracle
-from harness.install.toolchain import Rust
+from kit.toolchain import Rust
 
 crate = "https://crates.io/api/v1/crates/tocat-core"
 

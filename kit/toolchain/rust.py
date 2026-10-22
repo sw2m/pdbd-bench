@@ -7,7 +7,7 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-from harness.install.remote import Remote
+from kit.remote import Remote
 
 channel = "https://static.rust-lang.org/dist/channel-rust-stable.toml"
 rustup = "https://static.rust-lang.org/rustup/dist/{machine}-unknown-linux-gnu/rustup-init"

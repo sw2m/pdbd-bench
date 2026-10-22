@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from harness.install.remote import Remote
+from kit.remote import Remote
 
 
 class Oracle(Remote):

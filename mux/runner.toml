@@ -1,0 +1,2 @@
+image = "images:debian/12/cloud"
+type = "container" # loopback TCP needs no kernel of the runner's own

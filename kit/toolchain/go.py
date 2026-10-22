@@ -6,7 +6,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from harness.install.remote import Remote
+from kit.remote import Remote
 
 stable = "https://go.dev/dl/?mode=json"
 releases = "https://go.dev/dl/?mode=json&include=all"
